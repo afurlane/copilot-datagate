@@ -46,7 +46,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ steps.release.outputs.tag_name }}" \
-            "target/release/datagate" \
+            "target/release/copilot-datagate" \
             --clobber
 
   sonar-analysis:
@@ -76,7 +76,7 @@ jobs:
           SONAR_URL: ${{ secrets.SONAR_URL }}
         run: |
           sonar-scanner \
-            -Dsonar.projectKey=datagate \
+            -Dsonar.projectKey=copilot-datagate \
             -Dsonar.projectName="DataGate" \
             -Dsonar.sources=src \
             -Dsonar.branch.name=${{ github.event.workflow_run.head_branch }} \

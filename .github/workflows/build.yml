@@ -104,7 +104,7 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             sonar-scanner \
-              -Dsonar.projectKey=datagate \
+              -Dsonar.projectKey=copilot-datagate \
               -Dsonar.projectName="DataGate" \
               -Dsonar.sources=src \
               -Dsonar.qualitygate.wait=false \
@@ -115,7 +115,7 @@ jobs:
               -Dsonar.token=$SONAR_TOKEN
           else
             sonar-scanner \
-              -Dsonar.projectKey=datagate \
+              -Dsonar.projectKey=copilot-datagate \
               -Dsonar.projectName="DataGate" \
               -Dsonar.sources=src \
               -Dsonar.qualitygate.wait=false \

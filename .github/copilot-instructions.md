@@ -74,7 +74,7 @@ security-boundary che DataGate ha tra un LLM e un database reale.
 - Le versioni sono gestite da **release-please** su `master`, basato sui Conventional
   Commits. Non modificare manualmente `Cargo.toml` version o `CHANGELOG.md`: sono
   gestiti dal workflow di release.
-- Il gate di qualità **SonarQube** (project key `datagate`) e i controlli CI (build,
+- Il gate di qualità **SonarQube** (project key `copilot-datagate`) e i controlli CI (build,
   clippy, test, CodeQL, commitlint) devono essere verdi prima che una release parta.
 
 ## Vincoli
