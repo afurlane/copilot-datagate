@@ -1,0 +1,23 @@
+name: Feature Request
+description: Proponi una nuova funzionalità o miglioramento
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema da risolvere
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposta
+    validations:
+      required: true
+  - type: checkboxes
+    id: security
+    attributes:
+      label: Impatto sicurezza
+      options:
+        - label: Questa feature non introduce SQL libero, scritture o bypass del policy engine
+          required: true

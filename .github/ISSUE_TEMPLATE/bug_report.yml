@@ -1,0 +1,30 @@
+name: Bug Report
+description: Segnala un problema di comportamento o una vulnerabilità non sensibile
+labels: ["bug"]
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrizione
+      description: Cosa è successo? Cosa ti aspettavi?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Passi per riprodurre
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versione DataGate
+    validations:
+      required: false
+  - type: checkboxes
+    id: security
+    attributes:
+      label: Sicurezza
+      options:
+        - label: Non sto segnalando una vulnerabilità di sicurezza (in tal caso vedi SECURITY.md)
+          required: true

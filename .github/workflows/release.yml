@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["Build & Quality Checks"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'master' }}
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Release Please
+        id: release
+        uses: googleapis/release-please-action@v5
+        with:
+          config-file: .release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+      - name: Setup Rust
+        if: ${{ steps.release.outputs.release_created }}
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        if: ${{ steps.release.outputs.release_created }}
+        run: cargo build --release --locked
+
+      - name: Upload binary to Release
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ steps.release.outputs.tag_name }}" \
+            "target/release/datagate" \
+            --clobber
+
+  sonar-analysis:
+    name: SonarQube Quality Scan
+    runs-on: ubuntu-latest
+    needs: release
+    if: ${{ needs.release.outputs.release_created == 'true' }}
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          fetch-depth: 0
+
+      - name: Download SonarScanner CLI
+        run: |
+          curl -sSLo sonar.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.0.1.6346-linux-x64.zip
+          unzip sonar.zip
+          mv sonar-scanner-* sonar-scanner
+          echo "$PWD/sonar-scanner/bin" >> $GITHUB_PATH
+
+      - name: Run SonarQube Analysis
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_URL: ${{ secrets.SONAR_URL }}
+        run: |
+          sonar-scanner \
+            -Dsonar.projectKey=datagate \
+            -Dsonar.projectName="DataGate" \
+            -Dsonar.sources=src \
+            -Dsonar.branch.name=${{ github.event.workflow_run.head_branch }} \
+            -Dsonar.host.url=$SONAR_URL \
+            -Dsonar.token=$SONAR_TOKEN

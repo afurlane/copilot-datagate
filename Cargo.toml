@@ -1,0 +1,26 @@
+[package]
+name = "datagate"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Secure AI-Ready Data Gateway — policy-driven, read-only MCP server for exposing databases to LLMs"
+license = "Apache-2.0"
+repository = "https://github.com/afurlane/copilot-datagate"
+readme = "README.md"
+publish = false
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1

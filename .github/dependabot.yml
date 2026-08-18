@@ -1,0 +1,49 @@
+version: 2
+
+updates:
+  # ============================================================
+  # 1. CARGO DEPENDENCIES (monthly)
+  # ============================================================
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    groups:
+      tokio:
+        patterns:
+          - "tokio*"
+      serde:
+        patterns:
+          - "serde*"
+      tracing:
+        patterns:
+          - "tracing*"
+      test:
+        patterns:
+          - "tokio-test"
+          - "mockall"
+          - "testcontainers*"
+    labels:
+      - "dependencies"
+      - "automated"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+
+  # ============================================================
+  # 2. GITHUB ACTIONS (weekly)
+  # ============================================================
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+    labels:
+      - "dependencies"
+      - "automated"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

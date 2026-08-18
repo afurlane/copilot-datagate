@@ -1,0 +1,12 @@
+{
+  "bootstrap-sha": "99a100c",
+  "branches": [
+    {
+      "branch": "master",
+      "release-type": "rust",
+      "package-name": "datagate",
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": false
+    }
+  ]
+}
