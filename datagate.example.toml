@@ -1,0 +1,17 @@
+# Example DataGate policy configuration.
+# Copy to `datagate.toml` (or set DATAGATE_CONFIG to a custom path) and adjust.
+#
+# Security note: only tables/columns listed here are ever reachable by MCP
+# tools. Anything not explicitly allow-listed is denied by the policy engine.
+
+profile = "dev"
+
+[policy]
+default_row_limit = 100
+max_row_limit = 1000
+
+[policy.tables.users]
+columns = ["id", "email", "created_at"]
+
+[policy.tables.orders]
+columns = ["id", "user_id", "total", "status"]

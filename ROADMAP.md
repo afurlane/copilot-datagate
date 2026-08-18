@@ -1,10 +1,10 @@
 # 🗺️ Roadmap
 
 ## 🔵 Versione 0.1 — Foundation
-- [ ] Struttura del progetto Rust
+- [x] Struttura del progetto Rust
 - [ ] Connessione PostgreSQL read-only
 - [ ] Schema loader
-- [ ] Policy engine (base)
+- [x] Policy engine (base)
 - [ ] Query builder controllato (select + filters + limit)
 - [ ] MCP tool: `select`
 - [ ] Audit log
