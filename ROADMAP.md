@@ -12,7 +12,7 @@
 - [ ] README completo
 
 ## 🔵 Versione 0.2 — Safety & Observability
-- [ ] Rate limiting
+- [x] Rate limiting (fixed-window server-side per client)
 - [ ] Limiti di complessità
 - [ ] Limiti di output
 - [ ] Metriche (latency, p95, errori, pool)

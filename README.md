@@ -51,6 +51,11 @@ Il servizio legge la connessione dall'ambiente runtime:
 - opzioni PostgreSQL: `DB_OPTIONS`, nel formato `key=value&key=value`
 - pool: `DB_MAX_CONNECTIONS` e `DB_ACQUIRE_TIMEOUT_SECS`
 
+Il rate limiting server-side opzionale usa `RATE_LIMIT_REQUESTS` e
+`RATE_LIMIT_WINDOW_SECS`. Il limite è applicato per `request_id` prima di policy,
+query builder e database; richieste oltre soglia ricevono `rate_limited` e non
+generano SQL.
+
 Se `DB_URL` è presente ha precedenza sui componenti. Il ruolo PostgreSQL deve avere
 solo permessi di lettura; inoltre ogni connessione imposta
 `default_transaction_read_only = on`.

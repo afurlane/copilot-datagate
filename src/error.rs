@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum ErrorCode {
     InvalidRequest,
     PolicyDenied,
+    RateLimited,
     BackendUnavailable,
     InternalError,
 }
@@ -39,6 +40,14 @@ impl PublicError {
         Self {
             code: ErrorCode::BackendUnavailable,
             message: "the database backend is unavailable",
+            retryable: true,
+        }
+    }
+
+    pub const fn rate_limited() -> Self {
+        Self {
+            code: ErrorCode::RateLimited,
+            message: "request rate limit exceeded",
             retryable: true,
         }
     }
