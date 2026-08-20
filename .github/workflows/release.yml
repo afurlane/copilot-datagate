@@ -70,6 +70,20 @@ jobs:
           mv sonar-scanner-* sonar-scanner
           echo "$PWD/sonar-scanner/bin" >> $GITHUB_PATH
 
+      - name: Setup Rust for coverage
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --locked
+
+      - name: Generate LCOV and convert for Sonar
+        run: |
+          mkdir -p coverage
+          cargo llvm-cov --all-features --lcov --output-path coverage/lcov.info
+          cargo run --quiet --bin lcov_to_sonar -- coverage/lcov.info coverage/sonar-coverage.xml
+
       - name: Run SonarQube Analysis
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -79,6 +93,7 @@ jobs:
             -Dsonar.projectKey=copilot-datagate \
             -Dsonar.projectName="DataGate" \
             -Dsonar.sources=src \
+            -Dsonar.coverageReportPaths=coverage/sonar-coverage.xml \
             -Dsonar.branch.name=${{ github.event.workflow_run.head_branch }} \
             -Dsonar.host.url=$SONAR_URL \
             -Dsonar.token=$SONAR_TOKEN
