@@ -15,6 +15,8 @@ pub enum PolicyError {
     ColumnNotAllowed { table: String, column: String },
     #[error("requested row limit {requested} exceeds policy maximum {max}")]
     RowLimitExceeded { requested: u32, max: u32 },
+    #[error("query complexity {requested} exceeds policy maximum {max}")]
+    ComplexityExceeded { requested: u32, max: u32 },
 }
 
 #[derive(Debug, Default, Clone)]
@@ -68,6 +70,17 @@ impl Policy {
             Ok(limit)
         }
     }
+
+    pub fn check_complexity(&self, complexity: u32) -> Result<(), PolicyError> {
+        if complexity > self.config.max_query_complexity {
+            Err(PolicyError::ComplexityExceeded {
+                requested: complexity,
+                max: self.config.max_query_complexity,
+            })
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -89,6 +102,7 @@ mod tests {
             tables,
             default_row_limit: 50,
             max_row_limit: 200,
+            max_query_complexity: 100,
         })
     }
 
@@ -164,6 +178,20 @@ mod tests {
             PolicyError::RowLimitExceeded {
                 requested: 500,
                 max: 200,
+            }
+        );
+    }
+
+    #[test]
+    fn denies_query_complexity_above_max() {
+        let err = policy_with_users_id_email()
+            .check_complexity(101)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            PolicyError::ComplexityExceeded {
+                requested: 101,
+                max: 100,
             }
         );
     }

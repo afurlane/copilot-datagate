@@ -86,6 +86,14 @@ impl SelectRequest {
         }
 
         let limit = policy.resolve_row_limit(self.limit)?;
+        let complexity = u32::try_from(self.columns.len())
+            .unwrap_or(u32::MAX)
+            .saturating_add(
+                u32::try_from(self.filters.len())
+                    .unwrap_or(u32::MAX)
+                    .saturating_mul(2),
+            );
+        policy.check_complexity(complexity)?;
         let mut sql = format!("SELECT {} FROM {}", columns.join(", "), table);
         let mut binds = Vec::with_capacity(self.filters.len() + 1);
 
@@ -145,6 +153,7 @@ mod tests {
             tables,
             default_row_limit: 25,
             max_row_limit: 100,
+            max_query_complexity: 100,
         })
     }
 
@@ -235,5 +244,38 @@ mod tests {
             request.build(&users_policy()),
             Err(QueryBuilderError::EmptyColumns)
         );
+    }
+
+    #[test]
+    fn rejects_query_that_exceeds_complexity_budget() {
+        let mut tables = HashMap::new();
+        tables.insert(
+            "users".to_string(),
+            TableConfig {
+                columns: vec!["id".into(), "email".into(), "active".into()],
+            },
+        );
+        let policy = Policy::new(PolicyConfig {
+            tables,
+            default_row_limit: 25,
+            max_row_limit: 100,
+            max_query_complexity: 2,
+        });
+        let request = SelectRequest {
+            table: "users".into(),
+            columns: vec!["id".into(), "email".into()],
+            filters: vec![Filter {
+                column: "active".into(),
+                operator: FilterOperator::Equals,
+                value: BindValue::Boolean(true),
+            }],
+            limit: Some(1),
+        };
+        assert!(matches!(
+            request.build(&policy),
+            Err(QueryBuilderError::Policy(
+                PolicyError::ComplexityExceeded { .. }
+            ))
+        ));
     }
 }
