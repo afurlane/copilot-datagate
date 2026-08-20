@@ -113,6 +113,11 @@ aggregazione. Ogni tool è documentato, limitato, auditato, deterministico e def
 un input schema esplicito. I tool di lettura dati riusano il catalogo schema e non
 accettano SQL, frammenti SQL o identificatori non validati.
 
+Il primo contratto implementato è `select`: converte il payload JSON in un piano interno,
+valida policy e tipi dei filtri, registra l'esito nell'audit log e restituisce solo errori
+pubblici sanitizzati. Il piano SQL resta interno; il transport MCP e il mapping delle
+righe PostgreSQL sono step successivi.
+
 ## 6) Observability Layer
 Include metriche, audit log, errori strutturati, limiti applicati, tempi di risposta.
 La foundation attuale scrive eventi JSONL su `AUDIT_LOG_PATH`, senza SQL, valori di

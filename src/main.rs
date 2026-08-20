@@ -6,6 +6,8 @@ mod backend;
 mod config;
 #[allow(dead_code)]
 mod error;
+#[allow(dead_code)]
+mod mcp;
 mod policy;
 #[allow(dead_code)]
 mod query;

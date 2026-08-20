@@ -22,6 +22,8 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 ## 🧩 Funzionalità principali
 
 - **Query builder controllato** — operazioni semantiche come `select`, `search`, `aggregate`, con validazione automatica.
+- **MCP `select` tipizzato** — contratto JSON con policy, audit ed errori sanitizzati;
+    il transport e l'esecuzione delle righe seguono come step separati.
 - **Catalogo schema controllato** — introspezione policy-filtered di tabelle, viste,
   indici, trigger, funzioni, procedure e sequenze; definizioni DDL solo quando sicure.
 - **Rate limiting** — protezione contro loop del modello e query troppo pesanti.
