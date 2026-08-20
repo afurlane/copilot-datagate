@@ -1,9 +1,11 @@
 //! DataGate entrypoint. Real wiring (schema loader, backends, MCP tools)
 //! will be added incrementally per the roadmap.
 
+mod backend;
 mod config;
 mod policy;
 
+use backend::postgres::PostgresBackend;
 use config::Config;
 use policy::Policy;
 
@@ -24,6 +26,11 @@ async fn main() -> anyhow::Result<()> {
     let policy_table_count = config.policy.tables.len();
     let _policy = Policy::new(config.policy);
     tracing::info!(tables = policy_table_count, "policy engine ready");
+
+    if let Some(postgres_config) = config.postgres.as_ref() {
+        let _postgres_backend = PostgresBackend::connect(postgres_config).await?;
+        tracing::info!("PostgreSQL read-only connection established");
+    }
 
     Ok(())
 }

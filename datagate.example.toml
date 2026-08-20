@@ -6,6 +6,13 @@
 
 profile = "dev"
 
+# Use a PostgreSQL role that has only SELECT privileges. DataGate also applies
+# `default_transaction_read_only = on` to each pool connection as defense in depth.
+[postgres]
+url = "postgres://datagate_readonly:replace-me@localhost/application"
+max_connections = 5
+acquire_timeout_secs = 5
+
 [policy]
 default_row_limit = 100
 max_row_limit = 1000

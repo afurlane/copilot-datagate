@@ -23,6 +23,7 @@ pub struct Config {
     // Not read yet; will select environment-specific settings once profiles land (v0.2).
     #[allow(dead_code)]
     pub profile: Option<String>,
+    pub postgres: Option<PostgresConfig>,
     #[serde(default)]
     pub policy: PolicyConfig,
 }
@@ -38,6 +39,31 @@ impl Config {
         })?;
         Ok(toml::from_str(&raw)?)
     }
+}
+
+/// PostgreSQL pool configuration. The configured database role must itself be
+/// read-only; DataGate also enforces a read-only default for every pool session.
+#[derive(Debug, Deserialize, Clone)]
+pub struct PostgresConfig {
+    pub url: String,
+    #[serde(default = "default_max_connections")]
+    pub max_connections: u32,
+    #[serde(default = "default_acquire_timeout_secs")]
+    pub acquire_timeout_secs: u64,
+}
+
+impl PostgresConfig {
+    pub fn validate(&self) -> bool {
+        !self.url.trim().is_empty() && self.max_connections > 0 && self.acquire_timeout_secs > 0
+    }
+}
+
+fn default_max_connections() -> u32 {
+    5
+}
+
+fn default_acquire_timeout_secs() -> u64 {
+    5
 }
 
 /// Policy engine configuration: allow-listed tables/columns and row limits.
@@ -118,5 +144,33 @@ mod tests {
     fn load_rejects_missing_file() {
         let err = Config::load("/nonexistent/path/datagate.toml").unwrap_err();
         assert!(matches!(err, ConfigError::Read { .. }));
+    }
+
+    #[test]
+    fn parses_postgres_config_with_safe_defaults() {
+        let config: Config = toml::from_str(
+            r#"
+                [postgres]
+                url = "postgres://readonly:secret@localhost/application"
+            "#,
+        )
+        .expect("valid toml");
+        let postgres = config.postgres.expect("postgres config");
+        assert!(postgres.validate());
+        assert_eq!(postgres.max_connections, default_max_connections());
+        assert_eq!(
+            postgres.acquire_timeout_secs,
+            default_acquire_timeout_secs()
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_postgres_config_values() {
+        let postgres = PostgresConfig {
+            url: " ".to_string(),
+            max_connections: 0,
+            acquire_timeout_secs: 0,
+        };
+        assert!(!postgres.validate());
     }
 }

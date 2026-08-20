@@ -2,7 +2,7 @@
 
 ## 🔵 Versione 0.1 — Foundation
 - [x] Struttura del progetto Rust
-- [ ] Connessione PostgreSQL read-only
+- [x] Connessione PostgreSQL read-only
 - [ ] Schema loader
 - [x] Policy engine (base)
 - [ ] Query builder controllato (select + filters + limit)
