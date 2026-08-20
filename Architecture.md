@@ -142,6 +142,10 @@ Il query builder applica un budget di complessità server-side prima della gener
 SQL. Il costo deterministico corrente è `1 * colonne + 2 * filtri` e il massimo è
 definito da `policy.max_query_complexity`; il superamento produce un rifiuto di policy.
 
+Anche il payload JSON in uscita è limitato server-side tramite
+`policy.max_output_bytes`: dopo l'esecuzione controllata, DataGate serializza la
+risposta MCP e rifiuta output oltre soglia prima di restituire i dati al client.
+
 ## 7) Backend Layer
 Supporta diversi database dell'applicazione: PostgreSQL (oggi), altri DB domani.
 Ogni backend implementa: connessione, read-only, schema loader, query execution.

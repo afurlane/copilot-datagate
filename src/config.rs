@@ -202,6 +202,8 @@ pub struct PolicyConfig {
     pub max_row_limit: u32,
     #[serde(default = "default_max_query_complexity")]
     pub max_query_complexity: u32,
+    #[serde(default = "default_max_output_bytes")]
+    pub max_output_bytes: u32,
 }
 
 // Manual impl (not derive): Default must use the same values as the serde
@@ -213,6 +215,7 @@ impl Default for PolicyConfig {
             default_row_limit: default_row_limit(),
             max_row_limit: default_max_row_limit(),
             max_query_complexity: default_max_query_complexity(),
+            max_output_bytes: default_max_output_bytes(),
         }
     }
 }
@@ -237,6 +240,10 @@ fn default_max_query_complexity() -> u32 {
     100
 }
 
+fn default_max_output_bytes() -> u32 {
+    128 * 1024
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -249,6 +256,7 @@ mod tests {
             [policy]
             default_row_limit = 50
             max_row_limit = 500
+            max_output_bytes = 8192
 
             [policy.tables.users]
             columns = ["id", "email"]
@@ -257,6 +265,7 @@ mod tests {
         assert_eq!(config.profile.as_deref(), Some("dev"));
         assert_eq!(config.policy.default_row_limit, 50);
         assert_eq!(config.policy.max_row_limit, 500);
+        assert_eq!(config.policy.max_output_bytes, 8192);
         let users = config.policy.tables.get("users").expect("users table");
         assert_eq!(users.columns, vec!["id", "email"]);
     }
@@ -267,6 +276,7 @@ mod tests {
         assert!(config.policy.tables.is_empty());
         assert_eq!(config.policy.default_row_limit, default_row_limit());
         assert_eq!(config.policy.max_row_limit, default_max_row_limit());
+        assert_eq!(config.policy.max_output_bytes, default_max_output_bytes());
     }
 
     #[test]

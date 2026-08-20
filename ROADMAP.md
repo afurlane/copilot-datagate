@@ -14,7 +14,7 @@
 ## 🔵 Versione 0.2 — Safety & Observability
 - [x] Rate limiting (fixed-window server-side per client)
 - [x] Limiti di complessità (budget server-side nel query builder)
-- [ ] Limiti di output
+- [x] Limiti di output
 - [ ] Metriche (latency, p95, errori, pool)
 - [ ] MCP tool: `search`
 - [ ] Documentazione interna dei tool

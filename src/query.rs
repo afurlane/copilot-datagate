@@ -154,6 +154,7 @@ mod tests {
             default_row_limit: 25,
             max_row_limit: 100,
             max_query_complexity: 100,
+            max_output_bytes: 10_000,
         })
     }
 
@@ -260,6 +261,7 @@ mod tests {
             default_row_limit: 25,
             max_row_limit: 100,
             max_query_complexity: 2,
+            max_output_bytes: 10_000,
         });
         let request = SelectRequest {
             table: "users".into(),

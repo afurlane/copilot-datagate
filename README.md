@@ -60,6 +60,10 @@ Il query builder applica anche un budget massimo configurabile nella policy tram
 `max_query_complexity`: ogni colonna costa 1 e ogni filtro costa 2. Le richieste oltre
 budget vengono rifiutate prima di generare SQL.
 
+La risposta `select` è soggetta anche a `max_output_bytes` nella policy: se il payload
+JSON finale supera il limite, DataGate rifiuta la richiesta con errore di policy senza
+esporre SQL o dettagli interni.
+
 Se `DB_URL` è presente ha precedenza sui componenti. Il ruolo PostgreSQL deve avere
 solo permessi di lettura; inoltre ogni connessione imposta
 `default_transaction_read_only = on`.

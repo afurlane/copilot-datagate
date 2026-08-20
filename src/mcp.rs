@@ -145,7 +145,9 @@ impl<'a> SelectTool<'a> {
             .execute_select(&prepared.plan)
             .await
             .map_err(|_| PublicError::backend_unavailable())?;
-        Ok(response_from_result(prepared.request_id, result))
+        let response = response_from_result(prepared.request_id, result);
+        enforce_output_limit(self.policy, &response)?;
+        Ok(response)
     }
 
     fn convert_request(&self, request: SelectToolRequest) -> Result<SelectRequest, PublicError> {
@@ -182,6 +184,16 @@ fn response_from_result(request_id: String, result: SelectResult) -> SelectToolR
         columns: result.columns,
         rows: result.rows,
     }
+}
+
+fn enforce_output_limit(policy: &Policy, response: &SelectToolResponse) -> Result<(), PublicError> {
+    let output_bytes = serde_json::to_vec(response)
+        .map_err(|_| PublicError::internal())?
+        .len();
+    let output_bytes = u32::try_from(output_bytes).unwrap_or(u32::MAX);
+    policy
+        .check_output_bytes(output_bytes)
+        .map_err(|_| PublicError::policy_denied())
 }
 
 fn public_error_for_query(error: QueryBuilderError) -> PublicError {
@@ -245,6 +257,7 @@ mod tests {
             default_row_limit: 20,
             max_row_limit: 100,
             max_query_complexity: 100,
+            max_output_bytes: 10_000,
         })
     }
 
@@ -327,6 +340,34 @@ mod tests {
         assert_eq!(
             tool.prepare(request()).await.unwrap_err(),
             PublicError::rate_limited()
+        );
+    }
+
+    #[test]
+    fn rejects_response_that_exceeds_output_limit() {
+        let mut tables = HashMap::new();
+        tables.insert(
+            "users".into(),
+            TableConfig {
+                columns: vec!["id".into(), "email".into()],
+            },
+        );
+        let strict_policy = Policy::new(PolicyConfig {
+            tables,
+            default_row_limit: 20,
+            max_row_limit: 100,
+            max_query_complexity: 100,
+            max_output_bytes: 40,
+        });
+        let response = SelectToolResponse {
+            request_id: "request-4".into(),
+            columns: vec!["id".into(), "email".into()],
+            rows: vec![serde_json::json!({"id": 1, "email": "a@b.c"})],
+        };
+
+        assert_eq!(
+            enforce_output_limit(&strict_policy, &response).unwrap_err(),
+            PublicError::policy_denied()
         );
     }
 }
