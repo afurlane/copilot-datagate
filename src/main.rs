@@ -1,6 +1,7 @@
 //! DataGate entrypoint. Real wiring (schema loader, backends, MCP tools)
 //! will be added incrementally per the roadmap.
 
+mod audit;
 mod backend;
 mod config;
 mod policy;
@@ -8,6 +9,7 @@ mod policy;
 mod query;
 mod schema;
 
+use audit::{AuditEvent, AuditLogger};
 use backend::postgres::PostgresBackend;
 use config::Config;
 use policy::Policy;
@@ -16,6 +18,12 @@ use policy::Policy;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     tracing::info!("DataGate starting (skeleton build, no backend wired yet)");
+
+    if let Ok(path) = std::env::var("AUDIT_LOG_PATH") {
+        AuditLogger::new(path)
+            .record(&AuditEvent::new("startup", "process_start"))
+            .await?;
+    }
 
     let config_path =
         std::env::var("DATAGATE_CONFIG").unwrap_or_else(|_| "datagate.toml".to_string());

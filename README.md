@@ -75,7 +75,7 @@ Documentazione completa:
 - [x] Implementazione del query builder controllato (select parametrizzato)
 - [ ] Connessione read-only garantita
 - [x] Schema awareness automatica (catalogo interno PostgreSQL)
-- [ ] Metriche + audit log
+- [x] Audit log foundation (JSONL via `AUDIT_LOG_PATH`)
 - [ ] Tool MCP iniziali
 - [ ] Supporto multi-database
 - [ ] Versione 0.1.0

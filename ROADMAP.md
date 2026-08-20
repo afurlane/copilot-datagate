@@ -7,7 +7,7 @@
 - [x] Policy engine (base)
 - [x] Query builder controllato (select + filters + limit)
 - [ ] MCP tool: `select`
-- [ ] Audit log
+- [x] Audit log (foundation JSONL; tool-level coverage follows MCP layer)
 - [ ] Errori strutturati
 - [ ] README completo
 
