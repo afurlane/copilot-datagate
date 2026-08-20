@@ -6,20 +6,23 @@
 
 profile = "dev"
 
+# Named profiles are selected by the `profile` value above. The legacy flat
+# [policy] section remains supported when no [profiles] section is configured.
+
 # PostgreSQL credentials are read only from the environment, never from this file.
 # Compact form: DB_URL, optionally with DB_OPTIONS as key=value&key=value.
 # Component form: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.
 # Pool settings: DB_MAX_CONNECTIONS and DB_ACQUIRE_TIMEOUT_SECS.
 # DB_URL takes precedence when both forms are present.
 
-[policy]
+[profiles.dev.policy]
 default_row_limit = 100
 max_row_limit = 1000
 max_query_complexity = 100
 max_output_bytes = 131072
 
-[policy.tables.users]
+[profiles.dev.policy.tables.users]
 columns = ["id", "email", "created_at"]
 
-[policy.tables.orders]
+[profiles.dev.policy.tables.orders]
 columns = ["id", "user_id", "total", "status"]

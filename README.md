@@ -32,7 +32,7 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 - **Limiti di output** — risposte sempre contenute, sicure e strutturate.
 - **Errori deterministici** — nessun leak di schema, nessun SQL esposto, nessun stack trace.
 - **Errori strutturati** — envelope stabile con codice, messaggio generico e indicazione `retryable`.
-- **Configurazione esterna** — file di config per DB, policy, limiti e profili (dev/staging/prod).
+- **Configurazione esterna** — file TOML per policy, limiti e profili nominati (dev/staging/prod).
 
 DataGate non espone una funzione MCP di query SQL libera: l'agente invia esclusivamente
 parametri strutturati, validati contro schema e policy prima della costruzione della
@@ -73,6 +73,11 @@ del pool PostgreSQL (`size`, `idle`).
 Se `DB_URL` è presente ha precedenza sui componenti. Il ruolo PostgreSQL deve avere
 solo permessi di lettura; inoltre ogni connessione imposta
 `default_transaction_read_only = on`.
+
+Il profilo attivo si seleziona con `profile = "dev"` e può definire la policy in
+`[profiles.dev.policy]`. Se non sono presenti profili nominati, resta supportata la
+forma legacy `[policy]`. Un profilo dichiarato ma inesistente attiva una policy
+deny-all, senza avviare operazioni sul database.
 
 ## 🛡️ Perché DataGate?
 
