@@ -200,6 +200,8 @@ pub struct PolicyConfig {
     pub default_row_limit: u32,
     #[serde(default = "default_max_row_limit")]
     pub max_row_limit: u32,
+    #[serde(default = "default_max_query_complexity")]
+    pub max_query_complexity: u32,
 }
 
 // Manual impl (not derive): Default must use the same values as the serde
@@ -210,6 +212,7 @@ impl Default for PolicyConfig {
             tables: HashMap::new(),
             default_row_limit: default_row_limit(),
             max_row_limit: default_max_row_limit(),
+            max_query_complexity: default_max_query_complexity(),
         }
     }
 }
@@ -228,6 +231,10 @@ fn default_row_limit() -> u32 {
 
 fn default_max_row_limit() -> u32 {
     1000
+}
+
+fn default_max_query_complexity() -> u32 {
+    100
 }
 
 #[cfg(test)]

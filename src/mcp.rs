@@ -244,6 +244,7 @@ mod tests {
             tables,
             default_row_limit: 20,
             max_row_limit: 100,
+            max_query_complexity: 100,
         })
     }
 

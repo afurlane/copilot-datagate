@@ -138,6 +138,10 @@ prima di policy engine, query builder e backend. `RATE_LIMIT_REQUESTS` e
 limiter. Un rifiuto produce l'errore pubblico `rate_limited` e un evento audit senza
 SQL né valori della richiesta.
 
+Il query builder applica un budget di complessità server-side prima della generazione
+SQL. Il costo deterministico corrente è `1 * colonne + 2 * filtri` e il massimo è
+definito da `policy.max_query_complexity`; il superamento produce un rifiuto di policy.
+
 ## 7) Backend Layer
 Supporta diversi database dell'applicazione: PostgreSQL (oggi), altri DB domani.
 Ogni backend implementa: connessione, read-only, schema loader, query execution.
