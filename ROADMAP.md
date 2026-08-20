@@ -5,7 +5,7 @@
 - [x] Connessione PostgreSQL read-only
 - [x] Schema loader
 - [x] Policy engine (base)
-- [ ] Query builder controllato (select + filters + limit)
+- [x] Query builder controllato (select + filters + limit)
 - [ ] MCP tool: `select`
 - [ ] Audit log
 - [ ] Errori strutturati

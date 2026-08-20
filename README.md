@@ -72,7 +72,7 @@ Documentazione completa:
 ## 📍 Roadmap (sintesi)
 
 - [ ] Definizione del policy engine
-- [ ] Implementazione del query builder controllato
+- [x] Implementazione del query builder controllato (select parametrizzato)
 - [ ] Connessione read-only garantita
 - [x] Schema awareness automatica (catalogo interno PostgreSQL)
 - [ ] Metriche + audit log
