@@ -69,18 +69,9 @@ pub struct SearchToolRequest {
     pub limit: Option<u32>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct PreparedSearch {
-    pub request_id: String,
-    pub plan: QueryPlan,
-}
+pub type PreparedSearch = PreparedSelect;
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct SearchToolResponse {
-    pub request_id: String,
-    pub columns: Vec<String>,
-    pub rows: Vec<Value>,
-}
+pub type SearchToolResponse = SelectToolResponse;
 
 pub struct SelectTool<'a> {
     runtime: ToolRuntime<'a>,
@@ -683,6 +674,132 @@ mod tests {
         let too_large = serde_json::Number::from(u64::MAX);
         let err = bind_value(Value::Number(too_large)).unwrap_err();
         assert_eq!(err, PublicError::invalid_request());
+    }
+
+    #[test]
+    fn converts_supported_json_filter_values() {
+        assert_eq!(
+            bind_value(Value::String("alice".into())).unwrap(),
+            BindValue::Text("alice".into())
+        );
+        assert_eq!(
+            bind_value(serde_json::json!(42)).unwrap(),
+            BindValue::Integer(42)
+        );
+        assert_eq!(
+            bind_value(serde_json::json!(4.2)).unwrap(),
+            BindValue::Decimal(4.2)
+        );
+        assert_eq!(
+            bind_value(Value::Bool(true)).unwrap(),
+            BindValue::Boolean(true)
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_json_filter_values() {
+        for value in [
+            Value::Null,
+            serde_json::json!([1, 2]),
+            serde_json::json!({"key": "value"}),
+        ] {
+            assert_eq!(
+                bind_value(value).unwrap_err(),
+                PublicError::invalid_request()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_select_columns() {
+        let request = SelectToolRequest {
+            request_id: "request-6".into(),
+            table: "users".into(),
+            columns: vec![],
+            filters: vec![],
+            limit: Some(1),
+        };
+        assert_eq!(
+            SelectTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::invalid_request()
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_search_columns() {
+        let request = SearchToolRequest {
+            request_id: "search-4".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            searchable_columns: vec![],
+            text: "alice".into(),
+            limit: Some(1),
+        };
+        assert_eq!(
+            SearchTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::invalid_request()
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_search_with_unauthorized_searchable_column() {
+        let request = SearchToolRequest {
+            request_id: "search-5".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            searchable_columns: vec!["password".into()],
+            text: "alice".into(),
+            limit: Some(1),
+        };
+        assert_eq!(
+            SearchTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::policy_denied()
+        );
+    }
+
+    #[test]
+    fn maps_query_builder_errors_to_public_errors() {
+        assert_eq!(
+            public_error_for_query(QueryBuilderError::Policy(
+                crate::policy::PolicyError::TableNotAllowed("users".into())
+            )),
+            PublicError::policy_denied()
+        );
+        assert_eq!(
+            public_error_for_query(QueryBuilderError::InvalidIdentifier("bad".into())),
+            PublicError::invalid_request()
+        );
+        assert_eq!(
+            public_error_for_query(QueryBuilderError::EmptyColumns),
+            PublicError::invalid_request()
+        );
+        assert_eq!(
+            public_error_for_query(QueryBuilderError::EmptySearchColumns),
+            PublicError::invalid_request()
+        );
+    }
+
+    #[test]
+    fn records_runtime_metrics_when_configured() {
+        let metrics = MetricsRegistry::new();
+        let request_policy = policy();
+        let runtime = ToolRuntime::new(&request_policy, None).with_metrics(&metrics);
+        runtime.record_accepted_metric(std::time::Duration::from_millis(3));
+        runtime.record_rejected_metric(std::time::Duration::from_millis(4));
+        runtime.record_backend_error_metric(std::time::Duration::from_millis(5));
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.requests_accepted, 1);
+        assert_eq!(snapshot.requests_rejected, 2);
+        assert_eq!(snapshot.backend_errors, 1);
     }
 
     #[test]
