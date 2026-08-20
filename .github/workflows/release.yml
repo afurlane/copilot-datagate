@@ -75,14 +75,16 @@ jobs:
         with:
           components: llvm-tools-preview
 
-      - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov --locked
+      - name: Install coverage tools
+        run: |
+          cargo install cargo-llvm-cov --locked
+          cargo install lcov2generic --locked
 
       - name: Generate LCOV and convert for Sonar
         run: |
           mkdir -p coverage
           cargo llvm-cov --all-features --lcov --output-path coverage/lcov.info
-          cargo run --quiet --bin lcov_to_sonar -- coverage/lcov.info coverage/sonar-coverage.xml
+          lcov2generic coverage/lcov.info coverage/sonar-coverage.xml
 
       - name: Run SonarQube Analysis
         env:
