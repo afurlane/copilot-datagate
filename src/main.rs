@@ -4,6 +4,7 @@
 mod backend;
 mod config;
 mod policy;
+mod schema;
 
 use backend::postgres::PostgresBackend;
 use config::Config;
@@ -28,8 +29,18 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(tables = policy_table_count, "policy engine ready");
 
     if let Some(postgres_config) = config::PostgresConfig::from_env()? {
-        let _postgres_backend = PostgresBackend::connect(&postgres_config).await?;
+        let postgres_backend = PostgresBackend::connect(&postgres_config).await?;
         tracing::info!("PostgreSQL read-only connection established");
+        let schema = postgres_backend.load_schema().await?;
+        tracing::info!(
+            tables = schema.tables.len(),
+            views = schema.views.len(),
+            indexes = schema.indexes.len(),
+            triggers = schema.triggers.len(),
+            routines = schema.routines.len(),
+            sequences = schema.sequences.len(),
+            "database schema loaded"
+        );
     }
 
     Ok(())
