@@ -130,6 +130,14 @@ stabile con `code`, `message` generico e `retryable`: `invalid_request`, `policy
 `backend_unavailable` oppure `internal_error`. Non vengono mai restituiti SQL, stack
 trace, password, valori dei filtri o nomi di oggetti non autorizzati.
 
+## 6.2) Rate Limiting
+
+Il rate limiter usa finestre temporali fisse per client (`request_id`) e viene valutato
+prima di policy engine, query builder e backend. `RATE_LIMIT_REQUESTS` e
+`RATE_LIMIT_WINDOW_SECS` sono impostazioni server-side; valori assenti disabilitano il
+limiter. Un rifiuto produce l'errore pubblico `rate_limited` e un evento audit senza
+SQL né valori della richiesta.
+
 ## 7) Backend Layer
 Supporta diversi database dell'applicazione: PostgreSQL (oggi), altri DB domani.
 Ogni backend implementa: connessione, read-only, schema loader, query execution.

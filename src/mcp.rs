@@ -12,6 +12,7 @@ use crate::policy::Policy;
 use crate::query::{
     BindValue, Filter, FilterOperator, QueryBuilderError, QueryPlan, SelectRequest,
 };
+use crate::rate_limit::RateLimiter;
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct SelectToolRequest {
@@ -59,11 +60,28 @@ pub struct SelectToolResponse {
 pub struct SelectTool<'a> {
     policy: &'a Policy,
     audit: Option<&'a AuditLogger>,
+    rate_limiter: Option<&'a RateLimiter>,
 }
 
 impl<'a> SelectTool<'a> {
     pub fn new(policy: &'a Policy, audit: Option<&'a AuditLogger>) -> Self {
-        Self { policy, audit }
+        Self {
+            policy,
+            audit,
+            rate_limiter: None,
+        }
+    }
+
+    pub fn with_rate_limiter(
+        policy: &'a Policy,
+        audit: Option<&'a AuditLogger>,
+        rate_limiter: &'a RateLimiter,
+    ) -> Self {
+        Self {
+            policy,
+            audit,
+            rate_limiter: Some(rate_limiter),
+        }
     }
 
     /// Converts the MCP request into a policy-validated internal query plan.
@@ -72,6 +90,17 @@ impl<'a> SelectTool<'a> {
         let started = Instant::now();
         let request_id = request.request_id.clone();
         let operation = "select";
+        if let Some(rate_limiter) = self.rate_limiter {
+            if !rate_limiter.allow(&request_id) {
+                self.record_audit(
+                    AuditEvent::new(&request_id, operation)
+                        .outcome(AuditOutcome::Rejected)
+                        .elapsed(started.elapsed()),
+                )
+                .await;
+                return Err(PublicError::rate_limited());
+            }
+        }
         let internal = self.convert_request(request);
         let result = internal.and_then(|request| {
             request
@@ -279,5 +308,24 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error, PublicError::invalid_request());
+    }
+
+    #[tokio::test]
+    async fn rejects_requests_after_rate_limit_is_reached() {
+        let limiter = RateLimiter::new(1, std::time::Duration::from_secs(60)).expect("limiter");
+        let request = || SelectToolRequest {
+            request_id: "client-1".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: vec![],
+            limit: Some(1),
+        };
+        let request_policy = policy();
+        let tool = SelectTool::with_rate_limiter(&request_policy, None, &limiter);
+        tool.prepare(request()).await.expect("first request");
+        assert_eq!(
+            tool.prepare(request()).await.unwrap_err(),
+            PublicError::rate_limited()
+        );
     }
 }

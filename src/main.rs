@@ -11,17 +11,32 @@ mod mcp;
 mod policy;
 #[allow(dead_code)]
 mod query;
+mod rate_limit;
 mod schema;
 
 use audit::{AuditEvent, AuditLogger};
 use backend::postgres::PostgresBackend;
 use config::Config;
 use policy::Policy;
+use rate_limit::RateLimiter;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     tracing::info!("DataGate starting (skeleton build, no backend wired yet)");
+
+    let _rate_limiter = match (
+        std::env::var("RATE_LIMIT_REQUESTS"),
+        std::env::var("RATE_LIMIT_WINDOW_SECS"),
+    ) {
+        (Ok(max_requests), Ok(window_secs)) => match (max_requests.parse(), window_secs.parse()) {
+            (Ok(max_requests), Ok(window_secs)) => {
+                RateLimiter::new(max_requests, std::time::Duration::from_secs(window_secs))
+            }
+            _ => None,
+        },
+        _ => None,
+    };
 
     if let Ok(path) = std::env::var("AUDIT_LOG_PATH") {
         AuditLogger::new(path)
