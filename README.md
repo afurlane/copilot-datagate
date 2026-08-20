@@ -92,6 +92,7 @@ DataGate è in fase di progettazione. Il repository contiene la struttura inizia
 Documentazione completa:
 - [Architecture.md](Architecture.md) — design principles e architettura a layer
 - [ROADMAP.md](ROADMAP.md) — roadmap dettagliata verso la 1.0
+- [docs/mcp-tools.md](docs/mcp-tools.md) — contratti interni e regole dei tool MCP
 - [CONTRIBUTING.md](CONTRIBUTING.md) — regole di contribuzione, commit e branch
 - [SECURITY.md](SECURITY.md) — policy di sicurezza e segnalazione vulnerabilità
 
@@ -102,7 +103,7 @@ Documentazione completa:
 - [ ] Connessione read-only garantita
 - [x] Schema awareness automatica (catalogo interno PostgreSQL)
 - [x] Audit log foundation (JSONL via `AUDIT_LOG_PATH`)
-- [ ] Tool MCP iniziali
+- [x] Tool MCP iniziali (`select`, `search`)
 - [ ] Supporto multi-database
 - [ ] Versione 0.1.0
 

@@ -1,0 +1,123 @@
+# MCP Tools Internal Documentation
+
+This document is the internal reference for DataGate MCP tool contracts and
+security behavior.
+
+## Scope
+
+Implemented tools:
+
+- `select`
+- `search`
+
+Planned tools (not implemented yet):
+
+- `aggregate`
+
+## Shared Security Invariants
+
+All MCP tools must satisfy these invariants:
+
+- No free SQL accepted from callers.
+- Policy validation is mandatory before SQL plan execution.
+- Only parameterized SQL is executed.
+- Read-only backend path only.
+- Output-size limits enforced server-side.
+- Public errors are sanitized (`invalid_request`, `policy_denied`,
+  `rate_limited`, `backend_unavailable`, `internal_error`).
+- Audit events are recorded for accepted and rejected requests.
+- Optional rate limiting is evaluated before query execution.
+- Optional in-process metrics are recorded per request outcome.
+
+## Tool: select
+
+### Request Contract
+
+`SelectToolRequest`
+
+- `request_id: String`
+- `table: String`
+- `columns: Vec<String>`
+- `filters: Vec<SelectToolFilter>` (default empty)
+- `limit: Option<u32>`
+
+`SelectToolFilter`
+
+- `column: String`
+- `operator: SelectToolOperator`
+- `value: serde_json::Value`
+
+`SelectToolOperator`
+
+- `equals`
+- `not_equals`
+- `less_than`
+- `less_than_or_equal`
+- `greater_than`
+- `greater_than_or_equal`
+- `like`
+- `ilike`
+
+### Execution Flow
+
+1. `prepare` validates rate limit (if configured).
+2. JSON request is converted to internal `SelectRequest`.
+3. Query builder validates table/columns/filters and policy limits.
+4. Backend executes a parameterized SELECT.
+5. Response payload size is validated against `max_output_bytes`.
+
+### Response Contract
+
+`SelectToolResponse`
+
+- `request_id: String`
+- `columns: Vec<String>`
+- `rows: Vec<serde_json::Value>`
+
+## Tool: search
+
+### Request Contract
+
+`SearchToolRequest`
+
+- `request_id: String`
+- `table: String`
+- `columns: Vec<String>`
+- `searchable_columns: Vec<String>`
+- `text: String`
+- `limit: Option<u32>`
+
+### Execution Flow
+
+1. `prepare` validates rate limit (if configured).
+2. Request is converted to internal `SearchRequest`.
+3. Query builder validates table/columns/searchable columns via policy.
+4. Query builder produces a parameterized `ILIKE` query using `%text%` bind.
+5. Backend executes through controlled read-only path.
+6. Response payload size is validated against `max_output_bytes`.
+
+### Response Contract
+
+`SearchToolResponse`
+
+- `request_id: String`
+- `columns: Vec<String>`
+- `rows: Vec<serde_json::Value>`
+
+## Error Mapping Rules
+
+Internal errors are never returned as-is.
+
+- Policy denials -> `policy_denied`
+- Invalid input / unsupported value shape -> `invalid_request`
+- Rate limit denial -> `rate_limited`
+- Backend execution/connectivity failure -> `backend_unavailable`
+- Serialization/internal conversion edge failures -> `internal_error`
+
+## Coverage Notes
+
+Current line coverage is constrained mostly by bootstrap and DB-bound code paths
+that are not deterministic to unit test without integration infrastructure.
+
+Sonar coverage scope should keep focus on unit-testable business logic while the
+project incrementally adds integration testing.

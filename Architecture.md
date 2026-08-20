@@ -123,6 +123,9 @@ step successivo; nessun altro percorso può eseguire SQL arbitrario.
 solo su colonne autorizzate e stesso perimetro di sicurezza (`policy`, rate limiting,
 metriche, audit, output limit).
 
+I dettagli operativi dei contratti MCP e della mappatura errori sono mantenuti in
+`docs/mcp-tools.md` come riferimento interno versionato.
+
 ## 6) Observability Layer
 Include metriche, audit log, errori strutturati, limiti applicati, tempi di risposta.
 La foundation attuale scrive eventi JSONL su `AUDIT_LOG_PATH`, senza SQL, valori di

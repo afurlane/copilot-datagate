@@ -1,5 +1,6 @@
 //! MCP-facing request contracts. Transport wiring must call `SelectTool::prepare`.
 
+use std::future::Future;
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -68,27 +69,20 @@ pub struct SearchToolRequest {
     pub limit: Option<u32>,
 }
 
-#[derive(Debug, PartialEq)]
-pub struct PreparedSearch {
-    pub request_id: String,
-    pub plan: QueryPlan,
-}
+pub type PreparedSearch = PreparedSelect;
 
-#[derive(Debug, Clone, Serialize, PartialEq)]
-pub struct SearchToolResponse {
-    pub request_id: String,
-    pub columns: Vec<String>,
-    pub rows: Vec<Value>,
-}
+pub type SearchToolResponse = SelectToolResponse;
 
 pub struct SelectTool<'a> {
-    policy: &'a Policy,
-    audit: Option<&'a AuditLogger>,
-    rate_limiter: Option<&'a RateLimiter>,
-    metrics: Option<&'a MetricsRegistry>,
+    runtime: ToolRuntime<'a>,
 }
 
 pub struct SearchTool<'a> {
+    runtime: ToolRuntime<'a>,
+}
+
+#[derive(Clone, Copy)]
+struct ToolRuntime<'a> {
     policy: &'a Policy,
     audit: Option<&'a AuditLogger>,
     rate_limiter: Option<&'a RateLimiter>,
@@ -98,10 +92,7 @@ pub struct SearchTool<'a> {
 impl<'a> SelectTool<'a> {
     pub fn new(policy: &'a Policy, audit: Option<&'a AuditLogger>) -> Self {
         Self {
-            policy,
-            audit,
-            rate_limiter: None,
-            metrics: None,
+            runtime: ToolRuntime::new(policy, audit),
         }
     }
 
@@ -111,66 +102,33 @@ impl<'a> SelectTool<'a> {
         rate_limiter: &'a RateLimiter,
     ) -> Self {
         Self {
-            policy,
-            audit,
-            rate_limiter: Some(rate_limiter),
-            metrics: None,
+            runtime: ToolRuntime::with_rate_limiter(policy, audit, rate_limiter),
         }
     }
 
     pub fn with_metrics(mut self, metrics: &'a MetricsRegistry) -> Self {
-        self.metrics = Some(metrics);
+        self.runtime = self.runtime.with_metrics(metrics);
         self
     }
 
     /// Converts the MCP request into a policy-validated internal query plan.
     /// The plan remains internal and is never serialized as an MCP response.
     pub async fn prepare(&self, request: SelectToolRequest) -> Result<PreparedSelect, PublicError> {
-        let started = Instant::now();
         let request_id = request.request_id.clone();
-        let operation = "select";
-        if let Some(rate_limiter) = self.rate_limiter {
-            if !rate_limiter.allow(&request_id) {
-                self.record_audit(
-                    AuditEvent::new(&request_id, operation)
-                        .outcome(AuditOutcome::Rejected)
-                        .elapsed(started.elapsed()),
-                )
-                .await;
-                return Err(PublicError::rate_limited());
-            }
-        }
-        let internal = self.convert_request(request);
-        let result = internal.and_then(|request| {
-            request
-                .build(self.policy)
-                .map(|plan| PreparedSelect {
-                    request_id: request_id.clone(),
-                    plan,
-                })
-                .map_err(public_error_for_query)
-        });
+        let internal = self.convert_request(request)?;
+        let prepared_request_id = request_id.clone();
 
-        match result {
-            Ok(prepared) => {
-                self.record_audit(
-                    AuditEvent::new(&request_id, operation)
-                        .outcome(AuditOutcome::Accepted)
-                        .elapsed(started.elapsed()),
-                )
-                .await;
-                Ok(prepared)
-            }
-            Err(error) => {
-                self.record_audit(
-                    AuditEvent::new(&request_id, operation)
-                        .outcome(AuditOutcome::Rejected)
-                        .elapsed(started.elapsed()),
-                )
-                .await;
-                Err(error)
-            }
-        }
+        self.runtime
+            .prepare(&request_id, "select", move |policy| {
+                internal
+                    .build(policy)
+                    .map(|plan| PreparedSelect {
+                        request_id: prepared_request_id.clone(),
+                        plan,
+                    })
+                    .map_err(public_error_for_query)
+            })
+            .await
     }
 
     /// Executes a prepared select through the read-only backend and returns rows only.
@@ -179,32 +137,15 @@ impl<'a> SelectTool<'a> {
         backend: &PostgresBackend,
         request: SelectToolRequest,
     ) -> Result<SelectToolResponse, PublicError> {
-        let started = Instant::now();
-        let prepared = match self.prepare(request).await {
-            Ok(prepared) => prepared,
-            Err(error) => {
-                self.record_rejected_metric(started.elapsed());
-                return Err(error);
-            }
-        };
-        let result = backend.execute_select(&prepared.plan).await;
-        let result = match result {
-            Ok(result) => result,
-            Err(_) => {
-                self.record_backend_error_metric(started.elapsed());
-                return Err(PublicError::backend_unavailable());
-            }
-        };
-
-        self.record_pool_metrics(backend);
-        let response = response_from_result(prepared.request_id, result);
-        if let Err(error) = enforce_output_limit(self.policy, &response) {
-            self.record_rejected_metric(started.elapsed());
-            return Err(error);
-        }
-
-        self.record_accepted_metric(started.elapsed());
-        Ok(response)
+        self.runtime
+            .execute(
+                backend,
+                self.prepare(request),
+                |prepared| (prepared.request_id, prepared.plan),
+                response_from_result,
+                |response| enforce_output_limit(self.runtime.policy, response),
+            )
+            .await
     }
 
     fn convert_request(&self, request: SelectToolRequest) -> Result<SelectRequest, PublicError> {
@@ -227,41 +168,73 @@ impl<'a> SelectTool<'a> {
             limit: request.limit,
         })
     }
-
-    async fn record_audit(&self, event: AuditEvent) {
-        if let Some(audit) = self.audit {
-            let _ = audit.record(&event).await;
-        }
-    }
-
-    fn record_accepted_metric(&self, duration: std::time::Duration) {
-        if let Some(metrics) = self.metrics {
-            metrics.record_accepted(elapsed_ms(duration));
-        }
-    }
-
-    fn record_rejected_metric(&self, duration: std::time::Duration) {
-        if let Some(metrics) = self.metrics {
-            metrics.record_rejected(elapsed_ms(duration));
-        }
-    }
-
-    fn record_backend_error_metric(&self, duration: std::time::Duration) {
-        if let Some(metrics) = self.metrics {
-            metrics.record_backend_error();
-            metrics.record_rejected(elapsed_ms(duration));
-        }
-    }
-
-    fn record_pool_metrics(&self, backend: &PostgresBackend) {
-        if let Some(metrics) = self.metrics {
-            metrics.set_pool_metrics(backend.pool_metrics());
-        }
-    }
 }
 
 impl<'a> SearchTool<'a> {
     pub fn new(policy: &'a Policy, audit: Option<&'a AuditLogger>) -> Self {
+        Self {
+            runtime: ToolRuntime::new(policy, audit),
+        }
+    }
+
+    pub fn with_rate_limiter(
+        policy: &'a Policy,
+        audit: Option<&'a AuditLogger>,
+        rate_limiter: &'a RateLimiter,
+    ) -> Self {
+        Self {
+            runtime: ToolRuntime::with_rate_limiter(policy, audit, rate_limiter),
+        }
+    }
+
+    pub fn with_metrics(mut self, metrics: &'a MetricsRegistry) -> Self {
+        self.runtime = self.runtime.with_metrics(metrics);
+        self
+    }
+
+    pub async fn prepare(&self, request: SearchToolRequest) -> Result<PreparedSearch, PublicError> {
+        let request_id = request.request_id.clone();
+        let internal = SearchRequest {
+            table: request.table,
+            columns: request.columns,
+            searchable_columns: request.searchable_columns,
+            text: request.text,
+            limit: request.limit,
+        };
+        let prepared_request_id = request_id.clone();
+
+        self.runtime
+            .prepare(&request_id, "search", move |policy| {
+                internal
+                    .build(policy)
+                    .map(|plan| PreparedSearch {
+                        request_id: prepared_request_id.clone(),
+                        plan,
+                    })
+                    .map_err(public_error_for_query)
+            })
+            .await
+    }
+
+    pub async fn execute(
+        &self,
+        backend: &PostgresBackend,
+        request: SearchToolRequest,
+    ) -> Result<SearchToolResponse, PublicError> {
+        self.runtime
+            .execute(
+                backend,
+                self.prepare(request),
+                |prepared| (prepared.request_id, prepared.plan),
+                search_response_from_result,
+                |response| enforce_search_output_limit(self.runtime.policy, response),
+            )
+            .await
+    }
+}
+
+impl<'a> ToolRuntime<'a> {
+    fn new(policy: &'a Policy, audit: Option<&'a AuditLogger>) -> Self {
         Self {
             policy,
             audit,
@@ -270,7 +243,7 @@ impl<'a> SearchTool<'a> {
         }
     }
 
-    pub fn with_rate_limiter(
+    fn with_rate_limiter(
         policy: &'a Policy,
         audit: Option<&'a AuditLogger>,
         rate_limiter: &'a RateLimiter,
@@ -283,19 +256,25 @@ impl<'a> SearchTool<'a> {
         }
     }
 
-    pub fn with_metrics(mut self, metrics: &'a MetricsRegistry) -> Self {
+    fn with_metrics(mut self, metrics: &'a MetricsRegistry) -> Self {
         self.metrics = Some(metrics);
         self
     }
 
-    pub async fn prepare(&self, request: SearchToolRequest) -> Result<PreparedSearch, PublicError> {
+    async fn prepare<T, F>(
+        &self,
+        request_id: &str,
+        operation: &str,
+        build: F,
+    ) -> Result<T, PublicError>
+    where
+        F: FnOnce(&Policy) -> Result<T, PublicError>,
+    {
         let started = Instant::now();
-        let request_id = request.request_id.clone();
-        let operation = "search";
         if let Some(rate_limiter) = self.rate_limiter {
-            if !rate_limiter.allow(&request_id) {
+            if !rate_limiter.allow(request_id) {
                 self.record_audit(
-                    AuditEvent::new(&request_id, operation)
+                    AuditEvent::new(request_id, operation)
                         .outcome(AuditOutcome::Rejected)
                         .elapsed(started.elapsed()),
                 )
@@ -304,58 +283,52 @@ impl<'a> SearchTool<'a> {
             }
         }
 
-        let internal = SearchRequest {
-            table: request.table,
-            columns: request.columns,
-            searchable_columns: request.searchable_columns,
-            text: request.text,
-            limit: request.limit,
+        let result = build(self.policy);
+        let outcome = if result.is_ok() {
+            AuditOutcome::Accepted
+        } else {
+            AuditOutcome::Rejected
         };
-        let result = internal
-            .build(self.policy)
-            .map(|plan| PreparedSearch {
-                request_id: request_id.clone(),
-                plan,
-            })
-            .map_err(public_error_for_query);
+        self.record_audit(
+            AuditEvent::new(request_id, operation)
+                .outcome(outcome)
+                .elapsed(started.elapsed()),
+        )
+        .await;
 
-        match result {
-            Ok(prepared) => {
-                self.record_audit(
-                    AuditEvent::new(&request_id, operation)
-                        .outcome(AuditOutcome::Accepted)
-                        .elapsed(started.elapsed()),
-                )
-                .await;
-                Ok(prepared)
-            }
-            Err(error) => {
-                self.record_audit(
-                    AuditEvent::new(&request_id, operation)
-                        .outcome(AuditOutcome::Rejected)
-                        .elapsed(started.elapsed()),
-                )
-                .await;
-                Err(error)
-            }
+        result
+    }
+
+    async fn record_audit(&self, event: AuditEvent) {
+        if let Some(audit) = self.audit {
+            let _ = audit.record(&event).await;
         }
     }
 
-    pub async fn execute(
+    async fn execute<P, T, Prepare, Split, BuildResponse, CheckOutput>(
         &self,
         backend: &PostgresBackend,
-        request: SearchToolRequest,
-    ) -> Result<SearchToolResponse, PublicError> {
+        prepare: Prepare,
+        split: Split,
+        build_response: BuildResponse,
+        check_output: CheckOutput,
+    ) -> Result<T, PublicError>
+    where
+        Prepare: Future<Output = Result<P, PublicError>>,
+        Split: FnOnce(P) -> (String, QueryPlan),
+        BuildResponse: FnOnce(String, SelectResult) -> T,
+        CheckOutput: FnOnce(&T) -> Result<(), PublicError>,
+    {
         let started = Instant::now();
-        let prepared = match self.prepare(request).await {
+        let prepared = match prepare.await {
             Ok(prepared) => prepared,
             Err(error) => {
                 self.record_rejected_metric(started.elapsed());
                 return Err(error);
             }
         };
-        let result = backend.execute_select(&prepared.plan).await;
-        let result = match result {
+        let (request_id, plan) = split(prepared);
+        let result = match backend.execute_select(&plan).await {
             Ok(result) => result,
             Err(_) => {
                 self.record_backend_error_metric(started.elapsed());
@@ -364,20 +337,14 @@ impl<'a> SearchTool<'a> {
         };
 
         self.record_pool_metrics(backend);
-        let response = search_response_from_result(prepared.request_id, result);
-        if let Err(error) = enforce_search_output_limit(self.policy, &response) {
+        let response = build_response(request_id, result);
+        if let Err(error) = check_output(&response) {
             self.record_rejected_metric(started.elapsed());
             return Err(error);
         }
 
         self.record_accepted_metric(started.elapsed());
         Ok(response)
-    }
-
-    async fn record_audit(&self, event: AuditEvent) {
-        if let Some(audit) = self.audit {
-            let _ = audit.record(&event).await;
-        }
     }
 
     fn record_accepted_metric(&self, duration: std::time::Duration) {
@@ -427,18 +394,19 @@ fn search_response_from_result(request_id: String, result: SelectResult) -> Sear
 }
 
 fn enforce_output_limit(policy: &Policy, response: &SelectToolResponse) -> Result<(), PublicError> {
-    let output_bytes = serde_json::to_vec(response)
-        .map_err(|_| PublicError::internal())?
-        .len();
-    let output_bytes = u32::try_from(output_bytes).unwrap_or(u32::MAX);
-    policy
-        .check_output_bytes(output_bytes)
-        .map_err(|_| PublicError::policy_denied())
+    enforce_serialized_output_limit(policy, response)
 }
 
 fn enforce_search_output_limit(
     policy: &Policy,
     response: &SearchToolResponse,
+) -> Result<(), PublicError> {
+    enforce_serialized_output_limit(policy, response)
+}
+
+fn enforce_serialized_output_limit<T: Serialize>(
+    policy: &Policy,
+    response: &T,
 ) -> Result<(), PublicError> {
     let output_bytes = serde_json::to_vec(response)
         .map_err(|_| PublicError::internal())?
@@ -706,6 +674,132 @@ mod tests {
         let too_large = serde_json::Number::from(u64::MAX);
         let err = bind_value(Value::Number(too_large)).unwrap_err();
         assert_eq!(err, PublicError::invalid_request());
+    }
+
+    #[test]
+    fn converts_supported_json_filter_values() {
+        assert_eq!(
+            bind_value(Value::String("alice".into())).unwrap(),
+            BindValue::Text("alice".into())
+        );
+        assert_eq!(
+            bind_value(serde_json::json!(42)).unwrap(),
+            BindValue::Integer(42)
+        );
+        assert_eq!(
+            bind_value(serde_json::json!(4.2)).unwrap(),
+            BindValue::Decimal(4.2)
+        );
+        assert_eq!(
+            bind_value(Value::Bool(true)).unwrap(),
+            BindValue::Boolean(true)
+        );
+    }
+
+    #[test]
+    fn rejects_unsupported_json_filter_values() {
+        for value in [
+            Value::Null,
+            serde_json::json!([1, 2]),
+            serde_json::json!({"key": "value"}),
+        ] {
+            assert_eq!(
+                bind_value(value).unwrap_err(),
+                PublicError::invalid_request()
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_select_columns() {
+        let request = SelectToolRequest {
+            request_id: "request-6".into(),
+            table: "users".into(),
+            columns: vec![],
+            filters: vec![],
+            limit: Some(1),
+        };
+        assert_eq!(
+            SelectTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::invalid_request()
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_empty_search_columns() {
+        let request = SearchToolRequest {
+            request_id: "search-4".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            searchable_columns: vec![],
+            text: "alice".into(),
+            limit: Some(1),
+        };
+        assert_eq!(
+            SearchTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::invalid_request()
+        );
+    }
+
+    #[tokio::test]
+    async fn rejects_search_with_unauthorized_searchable_column() {
+        let request = SearchToolRequest {
+            request_id: "search-5".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            searchable_columns: vec!["password".into()],
+            text: "alice".into(),
+            limit: Some(1),
+        };
+        assert_eq!(
+            SearchTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::policy_denied()
+        );
+    }
+
+    #[test]
+    fn maps_query_builder_errors_to_public_errors() {
+        assert_eq!(
+            public_error_for_query(QueryBuilderError::Policy(
+                crate::policy::PolicyError::TableNotAllowed("users".into())
+            )),
+            PublicError::policy_denied()
+        );
+        assert_eq!(
+            public_error_for_query(QueryBuilderError::InvalidIdentifier("bad".into())),
+            PublicError::invalid_request()
+        );
+        assert_eq!(
+            public_error_for_query(QueryBuilderError::EmptyColumns),
+            PublicError::invalid_request()
+        );
+        assert_eq!(
+            public_error_for_query(QueryBuilderError::EmptySearchColumns),
+            PublicError::invalid_request()
+        );
+    }
+
+    #[test]
+    fn records_runtime_metrics_when_configured() {
+        let metrics = MetricsRegistry::new();
+        let request_policy = policy();
+        let runtime = ToolRuntime::new(&request_policy, None).with_metrics(&metrics);
+        runtime.record_accepted_metric(std::time::Duration::from_millis(3));
+        runtime.record_rejected_metric(std::time::Duration::from_millis(4));
+        runtime.record_backend_error_metric(std::time::Duration::from_millis(5));
+        let snapshot = metrics.snapshot();
+        assert_eq!(snapshot.requests_accepted, 1);
+        assert_eq!(snapshot.requests_rejected, 2);
+        assert_eq!(snapshot.backend_errors, 1);
     }
 
     #[test]
