@@ -52,8 +52,15 @@ async fn main() -> anyhow::Result<()> {
             Config::default()
         }
     };
-    let policy_table_count = config.policy.tables.len();
-    let _policy = Policy::new(config.policy);
+    let policy_config = match config.effective_policy() {
+        Ok(policy) => policy,
+        Err(err) => {
+            tracing::warn!(%err, "invalid configuration profile, starting with an empty (deny-all) policy");
+            config::PolicyConfig::default()
+        }
+    };
+    let policy_table_count = policy_config.tables.len();
+    let _policy = Policy::new(policy_config);
     tracing::info!(tables = policy_table_count, "policy engine ready");
 
     if let Some(postgres_config) = config::PostgresConfig::from_env()? {

@@ -19,15 +19,23 @@ pub enum ConfigError {
     },
     #[error("failed to parse config: {0}")]
     Parse(#[from] toml::de::Error),
+    #[error("unknown configuration profile `{0}`")]
+    UnknownProfile(String),
     #[error("invalid or missing database environment variable `{variable}`")]
     InvalidEnvironment { variable: &'static str },
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct Config {
-    // Not read yet; will select environment-specific settings once profiles land (v0.2).
-    #[allow(dead_code)]
     pub profile: Option<String>,
+    #[serde(default)]
+    pub policy: PolicyConfig,
+    #[serde(default)]
+    pub profiles: HashMap<String, ProfileConfig>,
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
+pub struct ProfileConfig {
     #[serde(default)]
     pub policy: PolicyConfig,
 }
@@ -42,6 +50,17 @@ impl Config {
             source,
         })?;
         Ok(toml::from_str(&raw)?)
+    }
+
+    pub fn effective_policy(&self) -> Result<PolicyConfig, ConfigError> {
+        match self.profile.as_deref() {
+            Some(profile) if !self.profiles.is_empty() => self
+                .profiles
+                .get(profile)
+                .map(|config| config.policy.clone())
+                .ok_or_else(|| ConfigError::UnknownProfile(profile.to_string())),
+            _ => Ok(self.policy.clone()),
+        }
     }
 }
 
@@ -266,8 +285,56 @@ mod tests {
         assert_eq!(config.policy.default_row_limit, 50);
         assert_eq!(config.policy.max_row_limit, 500);
         assert_eq!(config.policy.max_output_bytes, 8192);
+        assert!(config.profiles.is_empty());
         let users = config.policy.tables.get("users").expect("users table");
         assert_eq!(users.columns, vec!["id", "email"]);
+    }
+
+    #[test]
+    fn selects_policy_from_named_profile() {
+        let raw = r#"
+            profile = "production"
+
+            [policy]
+            max_output_bytes = 1024
+
+            [profiles.production.policy]
+            default_row_limit = 10
+            max_row_limit = 50
+        "#;
+        let config: Config = toml::from_str(raw).expect("valid toml");
+        let policy = config.effective_policy().expect("known profile");
+        assert_eq!(policy.default_row_limit, 10);
+        assert_eq!(policy.max_row_limit, 50);
+        assert_eq!(policy.max_output_bytes, default_max_output_bytes());
+    }
+
+    #[test]
+    fn rejects_unknown_named_profile() {
+        let config: Config = toml::from_str(
+            r#"
+                profile = "staging"
+                [profiles.production.policy]
+            "#,
+        )
+        .expect("valid toml");
+        assert!(matches!(
+            config.effective_policy(),
+            Err(ConfigError::UnknownProfile(profile)) if profile == "staging"
+        ));
+    }
+
+    #[test]
+    fn keeps_flat_policy_when_profiles_are_not_configured() {
+        let config: Config = toml::from_str(
+            r#"
+                profile = "dev"
+                [policy]
+                default_row_limit = 7
+            "#,
+        )
+        .expect("valid toml");
+        assert_eq!(config.effective_policy().unwrap().default_row_limit, 7);
     }
 
     #[test]

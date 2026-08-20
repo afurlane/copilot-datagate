@@ -18,7 +18,7 @@
 - [x] Metriche (latency, p95, errori, pool)
 - [x] MCP tool: `search`
 - [x] Documentazione interna dei tool
-- [ ] Configurazione esterna (TOML/YAML)
+- [x] Configurazione esterna TOML con profili nominati
 
 ## 🔵 Versione 0.3 — Advanced Query Layer
 - [ ] Aggregazioni (count, sum, avg, min, max)
