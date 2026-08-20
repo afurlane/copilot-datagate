@@ -38,6 +38,8 @@ security-boundary che DataGate ha tra un LLM e un database reale.
   `cargo fmt` + `cargo clippy -D warnings` puliti prima di ogni commit.
 - Errori di dominio con `thiserror`, errori applicativi con `anyhow`.
 - I/O asincrona con `tokio`; connessioni ai backend sempre tramite pool.
+- Credenziali backend solo da environment variables/runtime secret store (`DB_URL` o
+  `DB_*`); mai password, URL con credenziali o segreti nei file del repository.
 - Mantieni i moduli piccoli e allineati ai confini descritti in Architecture.md; non
   introdurre dipendenze pesanti se non strettamente necessarie.
 

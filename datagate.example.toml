@@ -6,6 +6,12 @@
 
 profile = "dev"
 
+# PostgreSQL credentials are read only from the environment, never from this file.
+# Compact form: DB_URL, optionally with DB_OPTIONS as key=value&key=value.
+# Component form: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.
+# Pool settings: DB_MAX_CONNECTIONS and DB_ACQUIRE_TIMEOUT_SECS.
+# DB_URL takes precedence when both forms are present.
+
 [policy]
 default_row_limit = 100
 max_row_limit = 1000

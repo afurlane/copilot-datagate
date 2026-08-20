@@ -22,10 +22,31 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 ## 🧩 Funzionalità principali
 
 - **Query builder controllato** — operazioni semantiche come `select`, `search`, `aggregate`, con validazione automatica.
+- **Catalogo schema controllato** — introspezione policy-filtered di tabelle, viste,
+  indici, trigger, funzioni, procedure e sequenze; definizioni DDL solo quando sicure.
 - **Rate limiting** — protezione contro loop del modello e query troppo pesanti.
 - **Limiti di output** — risposte sempre contenute, sicure e strutturate.
 - **Errori deterministici** — nessun leak di schema, nessun SQL esposto, nessun stack trace.
 - **Configurazione esterna** — file di config per DB, policy, limiti e profili (dev/staging/prod).
+
+DataGate non espone una funzione MCP di query SQL libera: l'agente invia esclusivamente
+parametri strutturati, validati contro schema e policy prima della costruzione della
+query parametrizzata.
+
+### Configurazione PostgreSQL
+
+Le credenziali PostgreSQL non vengono salvate nei file di configurazione o nel codice.
+Il servizio legge la connessione dall'ambiente runtime:
+
+- modalità compatta: `DB_URL`
+- modalità a componenti: `DB_HOST`, `DB_PORT` (default `5432`), `DB_USER`,
+  `DB_PASSWORD`, `DB_NAME`
+- opzioni PostgreSQL: `DB_OPTIONS`, nel formato `key=value&key=value`
+- pool: `DB_MAX_CONNECTIONS` e `DB_ACQUIRE_TIMEOUT_SECS`
+
+Se `DB_URL` è presente ha precedenza sui componenti. Il ruolo PostgreSQL deve avere
+solo permessi di lettura; inoltre ogni connessione imposta
+`default_transaction_read_only = on`.
 
 ## 🛡️ Perché DataGate?
 
