@@ -22,10 +22,16 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 ## 🧩 Funzionalità principali
 
 - **Query builder controllato** — operazioni semantiche come `select`, `search`, `aggregate`, con validazione automatica.
+- **Catalogo schema controllato** — introspezione policy-filtered di tabelle, viste,
+  indici, trigger, funzioni, procedure e sequenze; definizioni DDL solo quando sicure.
 - **Rate limiting** — protezione contro loop del modello e query troppo pesanti.
 - **Limiti di output** — risposte sempre contenute, sicure e strutturate.
 - **Errori deterministici** — nessun leak di schema, nessun SQL esposto, nessun stack trace.
 - **Configurazione esterna** — file di config per DB, policy, limiti e profili (dev/staging/prod).
+
+DataGate non espone una funzione MCP di query SQL libera: l'agente invia esclusivamente
+parametri strutturati, validati contro schema e policy prima della costruzione della
+query parametrizzata.
 
 ## 🛡️ Perché DataGate?
 

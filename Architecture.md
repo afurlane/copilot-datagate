@@ -60,7 +60,31 @@ Il policy engine è valutato *prima* di generare SQL.
 Carica automaticamente tabelle, colonne, tipi, vincoli, indici. Serve per validare
 richieste e prevenire query non sicure.
 
+Il loader conserva un modello interno dello schema, ma non lo espone direttamente. Ogni
+risposta di introspezione è filtrata dalla policy prima della serializzazione: un client
+non può usare il catalogo per scoprire tabelle o colonne non autorizzate.
+
+## 3.1) Catalogo di introspezione controllata
+
+I tool MCP di schema operano su categorie note e con input tipizzati. La prima versione
+del catalogo copre `tables`, `views`, `indexes`, `triggers`, `functions`, `procedures`
+e `sequences`.
+
+- `list_schema_objects(kind, parent?, name_prefix?, limit, cursor?)` restituisce un
+  elenco paginato e policy-filtered degli oggetti di una sola categoria.
+- `describe_schema_object(kind, name, parent?)` restituisce i metadati di un oggetto
+  noto e autorizzato; `parent` identifica ad esempio la tabella di un indice o trigger.
+- `get_schema_definition(kind, name, parent?)` può restituire una definizione **DDL**
+  normalizzata e policy-filtered quando è sicuro farlo. Non è DML: DataGate non espone
+  statement che modificano dati.
+
+La definizione DDL non è un dump del database: non include segreti, grant, ownership,
+estensioni, commenti sensibili o riferimenti a oggetti non consentiti. I nomi passati
+come input sono confrontati con lo schema caricato e con la policy; non vengono mai
+interpolati in SQL.
+
 ## 4) Query Builder Controllato
+
 Non SQL libero. Operazioni semantiche:
 - `select(table, columns, filters, limit)`
 - `search(table, text, limit)`
@@ -68,10 +92,26 @@ Non SQL libero. Operazioni semantiche:
 
 Il builder genera SQL sicuro, validato e conforme alle policy.
 
+Per `select`, gli input sono sempre strutturati: `table`, `columns`, `filters`, `limit`
+e in seguito `cursor`/ordinamento consentito. Ogni campo è validato dal catalogo/schema
+e dalla policy prima che il builder produca una query parametrizzata.
+
+### Nessuna query libera MCP
+
+DataGate non espone un tool `query(sql)` e non prevede eccezioni basate sul prompt,
+sull'identità dichiarata dal client o su un flag inviato dal modello. Una query libera
+annullerebbe i confini che il gateway deve imporre.
+
+Le necessità amministrative eccezionali devono essere gestite fuori dal protocollo MCP,
+con un percorso separato e umano: accesso diretto al database tramite ruolo dedicato,
+audit esplicito e autorizzazione organizzativa. Tale percorso non fa parte di DataGate e
+non condivide le credenziali read-only usate dal servizio.
+
 ## 5) MCP Tools Layer
-Espone operazioni a Copilot: tool semantici, tool di introspezione controllata, tool di
-ricerca, tool di aggregazione. Ogni tool è documentato, limitato, auditato,
-deterministico.
+Espone operazioni a Copilot: catalogo schema controllato, lettura semantica, ricerca e
+aggregazione. Ogni tool è documentato, limitato, auditato, deterministico e definito da
+un input schema esplicito. I tool di lettura dati riusano il catalogo schema e non
+accettano SQL, frammenti SQL o identificatori non validati.
 
 ## 6) Observability Layer
 Include metriche, audit log, errori strutturati, limiti applicati, tempi di risposta.
