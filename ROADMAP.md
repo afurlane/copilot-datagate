@@ -8,7 +8,7 @@
 - [x] Query builder controllato (select + filters + limit)
 - [ ] MCP tool: `select`
 - [x] Audit log (foundation JSONL; tool-level coverage follows MCP layer)
-- [ ] Errori strutturati
+- [x] Errori strutturati (public sanitized error envelope)
 - [ ] README completo
 
 ## 🔵 Versione 0.2 — Safety & Observability
