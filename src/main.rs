@@ -4,6 +4,8 @@
 mod audit;
 mod backend;
 mod config;
+#[allow(dead_code)]
+mod error;
 mod policy;
 #[allow(dead_code)]
 mod query;

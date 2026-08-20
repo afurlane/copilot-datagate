@@ -27,11 +27,16 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 - **Rate limiting** — protezione contro loop del modello e query troppo pesanti.
 - **Limiti di output** — risposte sempre contenute, sicure e strutturate.
 - **Errori deterministici** — nessun leak di schema, nessun SQL esposto, nessun stack trace.
+- **Errori strutturati** — envelope stabile con codice, messaggio generico e indicazione `retryable`.
 - **Configurazione esterna** — file di config per DB, policy, limiti e profili (dev/staging/prod).
 
 DataGate non espone una funzione MCP di query SQL libera: l'agente invia esclusivamente
 parametri strutturati, validati contro schema e policy prima della costruzione della
 query parametrizzata.
+
+Gli errori pubblici usano i codici `invalid_request`, `policy_denied`,
+`backend_unavailable` e `internal_error`. SQL, stack trace, password, valori dei filtri
+e nomi di oggetti non autorizzati non attraversano il confine MCP.
 
 ### Configurazione PostgreSQL
 

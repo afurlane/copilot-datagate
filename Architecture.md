@@ -118,6 +118,13 @@ Include metriche, audit log, errori strutturati, limiti applicati, tempi di risp
 La foundation attuale scrive eventi JSONL su `AUDIT_LOG_PATH`, senza SQL, valori di
 filtro o segreti. Il layer MCP dovrà registrare ogni richiesta e il relativo esito.
 
+## 6.1) Public Error Contract
+
+Gli errori interni non attraversano il confine MCP. Vengono convertiti in un envelope
+stabile con `code`, `message` generico e `retryable`: `invalid_request`, `policy_denied`,
+`backend_unavailable` oppure `internal_error`. Non vengono mai restituiti SQL, stack
+trace, password, valori dei filtri o nomi di oggetti non autorizzati.
+
 ## 7) Backend Layer
 Supporta diversi database dell'applicazione: PostgreSQL (oggi), altri DB domani.
 Ogni backend implementa: connessione, read-only, schema loader, query execution.
