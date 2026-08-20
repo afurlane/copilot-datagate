@@ -146,6 +146,10 @@ Anche il payload JSON in uscita è limitato server-side tramite
 `policy.max_output_bytes`: dopo l'esecuzione controllata, DataGate serializza la
 risposta MCP e rifiuta output oltre soglia prima di restituire i dati al client.
 
+La foundation metriche mantiene contatori in-process per richieste `select`
+(totali/accettate/rifiutate), errori backend, p95 latenza e ultimo snapshot del pool
+PostgreSQL (`size`, `idle`) per supportare troubleshooting e tuning.
+
 ## 7) Backend Layer
 Supporta diversi database dell'applicazione: PostgreSQL (oggi), altri DB domani.
 Ogni backend implementa: connessione, read-only, schema loader, query execution.

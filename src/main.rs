@@ -8,6 +8,7 @@ mod config;
 mod error;
 #[allow(dead_code)]
 mod mcp;
+mod metrics;
 mod policy;
 #[allow(dead_code)]
 mod query;
@@ -17,6 +18,7 @@ mod schema;
 use audit::{AuditEvent, AuditLogger};
 use backend::postgres::PostgresBackend;
 use config::Config;
+use metrics::MetricsRegistry;
 use policy::Policy;
 use rate_limit::RateLimiter;
 
@@ -24,6 +26,13 @@ use rate_limit::RateLimiter;
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     tracing::info!("DataGate starting (skeleton build, no backend wired yet)");
+
+    let metrics = MetricsRegistry::new();
+    let metrics_snapshot = metrics.snapshot();
+    tracing::debug!(
+        requests_total = metrics_snapshot.requests_total,
+        "metrics registry initialized"
+    );
 
     let _rate_limiter = match (
         std::env::var("RATE_LIMIT_REQUESTS"),

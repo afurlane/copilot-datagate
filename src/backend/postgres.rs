@@ -8,6 +8,7 @@ use sqlx::{Column, Row, TypeInfo};
 use thiserror::Error;
 
 use crate::config::PostgresConfig;
+use crate::metrics::PoolMetrics;
 use crate::query::{BindValue, QueryPlan};
 use crate::schema::{SchemaCatalog, SchemaLoaderError};
 
@@ -64,6 +65,13 @@ impl PostgresBackend {
         SchemaCatalog::load(&self.pool)
             .await
             .map_err(PostgresBackendError::Schema)
+    }
+
+    pub(crate) fn pool_metrics(&self) -> PoolMetrics {
+        PoolMetrics {
+            size: self.pool.size(),
+            idle: u32::try_from(self.pool.num_idle()).unwrap_or(u32::MAX),
+        }
     }
 
     /// Executes only a plan created by the controlled query builder.
