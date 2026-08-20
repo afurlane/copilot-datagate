@@ -14,6 +14,8 @@ pub enum QueryBuilderError {
     EmptyColumns,
     #[error("a search request must contain at least one searchable column")]
     EmptySearchColumns,
+    #[error("an aggregate request must contain at least one operation")]
+    EmptyAggregates,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -73,6 +75,41 @@ pub struct SearchRequest {
     pub searchable_columns: Vec<String>,
     pub text: String,
     pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AggregateFunction {
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+impl AggregateFunction {
+    fn sql(self) -> &'static str {
+        match self {
+            Self::Count => "COUNT",
+            Self::Sum => "SUM",
+            Self::Avg => "AVG",
+            Self::Min => "MIN",
+            Self::Max => "MAX",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AggregateOperation {
+    pub function: AggregateFunction,
+    pub column: String,
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AggregateRequest {
+    pub table: String,
+    pub operations: Vec<AggregateOperation>,
+    pub filters: Vec<Filter>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -181,6 +218,63 @@ impl SearchRequest {
         sql.push_str(&predicates);
         sql.push(')');
         sql.push_str(" LIMIT $2");
+
+        Ok(QueryPlan { sql, binds })
+    }
+}
+
+impl AggregateRequest {
+    /// Builds a parameterized aggregate over policy-allowed columns only.
+    pub fn build(&self, policy: &Policy) -> Result<QueryPlan, QueryBuilderError> {
+        if self.operations.is_empty() {
+            return Err(QueryBuilderError::EmptyAggregates);
+        }
+
+        policy.check_table(&self.table)?;
+        let table = quote_identifier(&self.table)?;
+        let mut expressions = Vec::with_capacity(self.operations.len());
+        for operation in &self.operations {
+            let column =
+                if operation.function == AggregateFunction::Count && operation.column == "*" {
+                    "*".to_string()
+                } else {
+                    policy.check_column(&self.table, &operation.column)?;
+                    quote_identifier(&operation.column)?
+                };
+            let mut expression = format!("{}({column})", operation.function.sql());
+            if let Some(alias) = &operation.alias {
+                expression.push_str(" AS ");
+                expression.push_str(&quote_identifier(alias)?);
+            }
+            expressions.push(expression);
+        }
+
+        let complexity = u32::try_from(self.operations.len())
+            .unwrap_or(u32::MAX)
+            .saturating_add(
+                u32::try_from(self.filters.len())
+                    .unwrap_or(u32::MAX)
+                    .saturating_mul(2),
+            );
+        policy.check_complexity(complexity)?;
+
+        let mut sql = format!("SELECT {} FROM {table}", expressions.join(", "));
+        let mut binds = Vec::with_capacity(self.filters.len());
+        if !self.filters.is_empty() {
+            let mut predicates = Vec::with_capacity(self.filters.len());
+            for (index, filter) in self.filters.iter().enumerate() {
+                policy.check_column(&self.table, &filter.column)?;
+                predicates.push(format!(
+                    "{} {} ${}",
+                    quote_identifier(&filter.column)?,
+                    filter.operator.sql(),
+                    index + 1
+                ));
+                binds.push(filter.value.clone());
+            }
+            sql.push_str(" WHERE ");
+            sql.push_str(&predicates.join(" AND "));
+        }
 
         Ok(QueryPlan { sql, binds })
     }
@@ -366,6 +460,113 @@ mod tests {
             plan.binds,
             vec![BindValue::Text("%alice%".into()), BindValue::Integer(5)]
         );
+    }
+
+    #[test]
+    fn builds_parameterized_aggregates_with_aliases_and_filters() {
+        let request = AggregateRequest {
+            table: "users".into(),
+            operations: vec![
+                AggregateOperation {
+                    function: AggregateFunction::Count,
+                    column: "*".into(),
+                    alias: Some("total_users".into()),
+                },
+                AggregateOperation {
+                    function: AggregateFunction::Avg,
+                    column: "id".into(),
+                    alias: Some("average_id".into()),
+                },
+            ],
+            filters: vec![Filter {
+                column: "active".into(),
+                operator: FilterOperator::Equals,
+                value: BindValue::Boolean(true),
+            }],
+        };
+
+        let plan = request
+            .build(&users_policy())
+            .expect("valid aggregate plan");
+        assert_eq!(
+            plan.sql,
+            "SELECT COUNT(*) AS \"total_users\", AVG(\"id\") AS \"average_id\" FROM \"users\" WHERE \"active\" = $1"
+        );
+        assert_eq!(plan.binds, vec![BindValue::Boolean(true)]);
+    }
+
+    #[test]
+    fn builds_all_supported_aggregate_functions() {
+        let request = AggregateRequest {
+            table: "users".into(),
+            operations: vec![
+                AggregateOperation {
+                    function: AggregateFunction::Count,
+                    column: "id".into(),
+                    alias: None,
+                },
+                AggregateOperation {
+                    function: AggregateFunction::Sum,
+                    column: "id".into(),
+                    alias: None,
+                },
+                AggregateOperation {
+                    function: AggregateFunction::Avg,
+                    column: "id".into(),
+                    alias: None,
+                },
+                AggregateOperation {
+                    function: AggregateFunction::Min,
+                    column: "id".into(),
+                    alias: None,
+                },
+                AggregateOperation {
+                    function: AggregateFunction::Max,
+                    column: "id".into(),
+                    alias: None,
+                },
+            ],
+            filters: vec![],
+        };
+        let plan = request
+            .build(&users_policy())
+            .expect("valid aggregate plan");
+        assert_eq!(
+            plan.sql,
+            "SELECT COUNT(\"id\"), SUM(\"id\"), AVG(\"id\"), MIN(\"id\"), MAX(\"id\") FROM \"users\""
+        );
+    }
+
+    #[test]
+    fn rejects_empty_aggregate_operations() {
+        let request = AggregateRequest {
+            table: "users".into(),
+            operations: vec![],
+            filters: vec![],
+        };
+        assert_eq!(
+            request.build(&users_policy()),
+            Err(QueryBuilderError::EmptyAggregates)
+        );
+    }
+
+    #[test]
+    fn rejects_aggregate_column_outside_policy() {
+        let request = AggregateRequest {
+            table: "users".into(),
+            operations: vec![AggregateOperation {
+                function: AggregateFunction::Sum,
+                column: "password".into(),
+                alias: None,
+            }],
+            filters: vec![],
+        };
+        assert!(matches!(
+            request.build(&users_policy()),
+            Err(QueryBuilderError::Policy(
+                PolicyError::ColumnNotAllowed { .. }
+            ))
+        ));
     }
 
     #[test]

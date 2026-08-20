@@ -12,7 +12,8 @@ use crate::error::PublicError;
 use crate::metrics::MetricsRegistry;
 use crate::policy::Policy;
 use crate::query::{
-    BindValue, Filter, FilterOperator, QueryBuilderError, QueryPlan, SearchRequest, SelectRequest,
+    AggregateFunction, AggregateOperation, AggregateRequest, BindValue, Filter, FilterOperator,
+    QueryBuilderError, QueryPlan, SearchRequest, SelectRequest,
 };
 use crate::rate_limit::RateLimiter;
 
@@ -69,15 +70,49 @@ pub struct SearchToolRequest {
     pub limit: Option<u32>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct AggregateToolRequest {
+    pub request_id: String,
+    pub table: String,
+    pub operations: Vec<AggregateToolOperation>,
+    #[serde(default)]
+    pub filters: Vec<SelectToolFilter>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AggregateToolFunction {
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct AggregateToolOperation {
+    pub function: AggregateToolFunction,
+    pub column: String,
+    pub alias: Option<String>,
+}
+
 pub type PreparedSearch = PreparedSelect;
 
+pub type PreparedAggregate = PreparedSelect;
+
 pub type SearchToolResponse = SelectToolResponse;
+
+pub type AggregateToolResponse = SelectToolResponse;
 
 pub struct SelectTool<'a> {
     runtime: ToolRuntime<'a>,
 }
 
 pub struct SearchTool<'a> {
+    runtime: ToolRuntime<'a>,
+}
+
+pub struct AggregateTool<'a> {
     runtime: ToolRuntime<'a>,
 }
 
@@ -149,22 +184,10 @@ impl<'a> SelectTool<'a> {
     }
 
     fn convert_request(&self, request: SelectToolRequest) -> Result<SelectRequest, PublicError> {
-        let filters = request
-            .filters
-            .into_iter()
-            .map(|filter| {
-                Ok(Filter {
-                    column: filter.column,
-                    operator: filter.operator.into(),
-                    value: bind_value(filter.value)?,
-                })
-            })
-            .collect::<Result<Vec<_>, PublicError>>()?;
-
         Ok(SelectRequest {
             table: request.table,
             columns: request.columns,
-            filters,
+            filters: convert_filters(request.filters)?,
             limit: request.limit,
         })
     }
@@ -230,6 +253,103 @@ impl<'a> SearchTool<'a> {
                 |response| enforce_search_output_limit(self.runtime.policy, response),
             )
             .await
+    }
+}
+
+impl<'a> AggregateTool<'a> {
+    pub fn new(policy: &'a Policy, audit: Option<&'a AuditLogger>) -> Self {
+        Self {
+            runtime: ToolRuntime::new(policy, audit),
+        }
+    }
+
+    pub fn with_rate_limiter(
+        policy: &'a Policy,
+        audit: Option<&'a AuditLogger>,
+        rate_limiter: &'a RateLimiter,
+    ) -> Self {
+        Self {
+            runtime: ToolRuntime::with_rate_limiter(policy, audit, rate_limiter),
+        }
+    }
+
+    pub fn with_metrics(mut self, metrics: &'a MetricsRegistry) -> Self {
+        self.runtime = self.runtime.with_metrics(metrics);
+        self
+    }
+
+    pub async fn prepare(
+        &self,
+        request: AggregateToolRequest,
+    ) -> Result<PreparedAggregate, PublicError> {
+        let request_id = request.request_id.clone();
+        let internal = AggregateRequest {
+            table: request.table,
+            operations: request
+                .operations
+                .into_iter()
+                .map(|operation| AggregateOperation {
+                    function: operation.function.into(),
+                    column: operation.column,
+                    alias: operation.alias,
+                })
+                .collect(),
+            filters: convert_filters(request.filters)?,
+        };
+        let prepared_request_id = request_id.clone();
+
+        self.runtime
+            .prepare(&request_id, "aggregate", move |policy| {
+                internal
+                    .build(policy)
+                    .map(|plan| PreparedAggregate {
+                        request_id: prepared_request_id.clone(),
+                        plan,
+                    })
+                    .map_err(public_error_for_query)
+            })
+            .await
+    }
+
+    pub async fn execute(
+        &self,
+        backend: &PostgresBackend,
+        request: AggregateToolRequest,
+    ) -> Result<AggregateToolResponse, PublicError> {
+        self.runtime
+            .execute(
+                backend,
+                self.prepare(request),
+                |prepared| (prepared.request_id, prepared.plan),
+                aggregate_response_from_result,
+                |response| enforce_serialized_output_limit(self.runtime.policy, response),
+            )
+            .await
+    }
+}
+
+fn convert_filters(filters: Vec<SelectToolFilter>) -> Result<Vec<Filter>, PublicError> {
+    filters
+        .into_iter()
+        .map(|filter| {
+            Ok(Filter {
+                column: filter.column,
+                operator: filter.operator.into(),
+                value: bind_value(filter.value)?,
+            })
+        })
+        .collect()
+}
+
+impl From<AggregateToolFunction> for AggregateFunction {
+    fn from(function: AggregateToolFunction) -> Self {
+        match function {
+            AggregateToolFunction::Count => Self::Count,
+            AggregateToolFunction::Sum => Self::Sum,
+            AggregateToolFunction::Avg => Self::Avg,
+            AggregateToolFunction::Min => Self::Min,
+            AggregateToolFunction::Max => Self::Max,
+        }
     }
 }
 
@@ -393,6 +513,17 @@ fn search_response_from_result(request_id: String, result: SelectResult) -> Sear
     }
 }
 
+fn aggregate_response_from_result(
+    request_id: String,
+    result: SelectResult,
+) -> AggregateToolResponse {
+    SelectToolResponse {
+        request_id,
+        columns: result.columns,
+        rows: result.rows,
+    }
+}
+
 fn enforce_output_limit(policy: &Policy, response: &SelectToolResponse) -> Result<(), PublicError> {
     enforce_serialized_output_limit(policy, response)
 }
@@ -422,7 +553,8 @@ fn public_error_for_query(error: QueryBuilderError) -> PublicError {
         QueryBuilderError::Policy(_) => PublicError::policy_denied(),
         QueryBuilderError::InvalidIdentifier(_)
         | QueryBuilderError::EmptyColumns
-        | QueryBuilderError::EmptySearchColumns => PublicError::invalid_request(),
+        | QueryBuilderError::EmptySearchColumns
+        | QueryBuilderError::EmptyAggregates => PublicError::invalid_request(),
     }
 }
 
@@ -611,6 +743,80 @@ mod tests {
         assert_eq!(
             prepared.plan.binds,
             vec![BindValue::Text("%alice%".into()), BindValue::Integer(10)]
+        );
+    }
+
+    #[tokio::test]
+    async fn prepares_aggregate_request_with_policy_checked_operations() {
+        let request = AggregateToolRequest {
+            request_id: "aggregate-1".into(),
+            table: "users".into(),
+            operations: vec![
+                AggregateToolOperation {
+                    function: AggregateToolFunction::Count,
+                    column: "*".into(),
+                    alias: Some("total".into()),
+                },
+                AggregateToolOperation {
+                    function: AggregateToolFunction::Avg,
+                    column: "id".into(),
+                    alias: Some("average_id".into()),
+                },
+            ],
+            filters: vec![SelectToolFilter {
+                column: "active".into(),
+                operator: SelectToolOperator::Equals,
+                value: Value::Bool(true),
+            }],
+        };
+
+        let prepared = AggregateTool::new(&policy(), None)
+            .prepare(request)
+            .await
+            .expect("valid aggregate request");
+        assert_eq!(prepared.request_id, "aggregate-1");
+        assert_eq!(
+            prepared.plan.sql,
+            "SELECT COUNT(*) AS \"total\", AVG(\"id\") AS \"average_id\" FROM \"users\" WHERE \"active\" = $1"
+        );
+        assert_eq!(prepared.plan.binds, vec![BindValue::Boolean(true)]);
+    }
+
+    #[tokio::test]
+    async fn aggregate_rejects_empty_operations() {
+        let request = AggregateToolRequest {
+            request_id: "aggregate-2".into(),
+            table: "users".into(),
+            operations: vec![],
+            filters: vec![],
+        };
+        assert_eq!(
+            AggregateTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::invalid_request()
+        );
+    }
+
+    #[tokio::test]
+    async fn aggregate_rejects_disallowed_operation_column() {
+        let request = AggregateToolRequest {
+            request_id: "aggregate-3".into(),
+            table: "users".into(),
+            operations: vec![AggregateToolOperation {
+                function: AggregateToolFunction::Sum,
+                column: "password".into(),
+                alias: None,
+            }],
+            filters: vec![],
+        };
+        assert_eq!(
+            AggregateTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::policy_denied()
         );
     }
 

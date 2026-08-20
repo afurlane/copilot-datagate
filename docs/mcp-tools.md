@@ -9,10 +9,10 @@ Implemented tools:
 
 - `select`
 - `search`
-
-Planned tools (not implemented yet):
-
 - `aggregate`
+
+The first `aggregate` version returns one aggregate row and does not support
+`GROUP BY`; grouped aggregation is reserved for the advanced query layer.
 
 ## Shared Security Invariants
 
@@ -99,6 +99,39 @@ All MCP tools must satisfy these invariants:
 ### Response Contract
 
 `SearchToolResponse`
+
+- `request_id: String`
+- `columns: Vec<String>`
+- `rows: Vec<serde_json::Value>`
+
+## Tool: aggregate
+
+### Request Contract
+
+`AggregateToolRequest`
+
+- `request_id: String`
+- `table: String`
+- `operations: Vec<AggregateToolOperation>`
+- `filters: Vec<SelectToolFilter>` (default empty)
+
+`AggregateToolOperation`
+
+- `function: count | sum | avg | min | max`
+- `column: String` (`*` is allowed only for `count`)
+- `alias: Option<String>`
+
+### Execution Flow
+
+1. `prepare` validates rate limit (if configured).
+2. Operations and filters are converted to internal typed values.
+3. Query builder validates every table, column, alias and complexity budget.
+4. Backend executes one parameterized aggregate SELECT through the read-only path.
+5. Response payload size is validated against `max_output_bytes`.
+
+### Response Contract
+
+`AggregateToolResponse`
 
 - `request_id: String`
 - `columns: Vec<String>`

@@ -21,11 +21,11 @@
 - [x] Configurazione esterna TOML con profili nominati
 
 ## 🔵 Versione 0.3 — Advanced Query Layer
-- [ ] Aggregazioni (count, sum, avg, min, max)
+- [x] Aggregazioni (count, sum, avg, min, max; senza GROUP BY nella prima versione)
 - [ ] Filtri avanzati (range, pattern, full-text)
 - [ ] Policy engine avanzato
 - [ ] Schema awareness completa
-- [ ] MCP tool: `aggregate`
+- [x] MCP tool: `aggregate`
 - [ ] Supporto multi-schema
 
 ## 🔵 Versione 0.4 — Multi-Database
