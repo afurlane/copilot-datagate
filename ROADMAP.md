@@ -16,7 +16,7 @@
 - [x] Limiti di complessità (budget server-side nel query builder)
 - [x] Limiti di output
 - [x] Metriche (latency, p95, errori, pool)
-- [ ] MCP tool: `search`
+- [x] MCP tool: `search`
 - [ ] Documentazione interna dei tool
 - [ ] Configurazione esterna (TOML/YAML)
 

@@ -118,6 +118,11 @@ valida policy e tipi dei filtri, esegue il piano tramite il pool read-only, regi
 l'esito nell'audit log e restituisce righe JSON senza il SQL. Il transport MCP resta uno
 step successivo; nessun altro percorso può eseguire SQL arbitrario.
 
+È implementato anche il contratto `search`: input tipizzato (`table`, `columns`,
+`searchable_columns`, `text`, `limit`), generazione SQL parametrizzata con `ILIKE`
+solo su colonne autorizzate e stesso perimetro di sicurezza (`policy`, rate limiting,
+metriche, audit, output limit).
+
 ## 6) Observability Layer
 Include metriche, audit log, errori strutturati, limiti applicati, tempi di risposta.
 La foundation attuale scrive eventi JSONL su `AUDIT_LOG_PATH`, senza SQL, valori di

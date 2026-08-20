@@ -24,6 +24,8 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 - **Query builder controllato** — operazioni semantiche come `select`, `search`, `aggregate`, con validazione automatica.
 - **MCP `select` tipizzato** — contratto JSON, esecuzione read-only con righe JSON,
     policy, audit ed errori sanitizzati; il transport MCP resta lo step successivo.
+- **MCP `search` tipizzato** — ricerca semantica con `ILIKE` su colonne consentite,
+  query parametrizzate, policy/rate-limit/metriche/audit e output limit server-side.
 - **Catalogo schema controllato** — introspezione policy-filtered di tabelle, viste,
   indici, trigger, funzioni, procedure e sequenze; definizioni DDL solo quando sicure.
 - **Rate limiting** — protezione contro loop del modello e query troppo pesanti.

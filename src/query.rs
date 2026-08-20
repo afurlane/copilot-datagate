@@ -12,6 +12,8 @@ pub enum QueryBuilderError {
     InvalidIdentifier(String),
     #[error("a select request must contain at least one column")]
     EmptyColumns,
+    #[error("a search request must contain at least one searchable column")]
+    EmptySearchColumns,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -61,6 +63,15 @@ pub struct SelectRequest {
     pub table: String,
     pub columns: Vec<String>,
     pub filters: Vec<Filter>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchRequest {
+    pub table: String,
+    pub columns: Vec<String>,
+    pub searchable_columns: Vec<String>,
+    pub text: String,
     pub limit: Option<u32>,
 }
 
@@ -115,6 +126,61 @@ impl SelectRequest {
 
         binds.push(BindValue::Integer(i64::from(limit)));
         sql.push_str(&format!(" LIMIT ${}", binds.len()));
+
+        Ok(QueryPlan { sql, binds })
+    }
+}
+
+impl SearchRequest {
+    /// Builds a parameterized ILIKE search over policy-allowed columns only.
+    pub fn build(&self, policy: &Policy) -> Result<QueryPlan, QueryBuilderError> {
+        if self.columns.is_empty() {
+            return Err(QueryBuilderError::EmptyColumns);
+        }
+        if self.searchable_columns.is_empty() {
+            return Err(QueryBuilderError::EmptySearchColumns);
+        }
+
+        policy.check_table(&self.table)?;
+        let table = quote_identifier(&self.table)?;
+
+        let mut columns = Vec::with_capacity(self.columns.len());
+        for column in &self.columns {
+            policy.check_column(&self.table, column)?;
+            columns.push(quote_identifier(column)?);
+        }
+
+        let mut searchable_columns = Vec::with_capacity(self.searchable_columns.len());
+        for column in &self.searchable_columns {
+            policy.check_column(&self.table, column)?;
+            searchable_columns.push(quote_identifier(column)?);
+        }
+
+        let limit = policy.resolve_row_limit(self.limit)?;
+        let complexity = u32::try_from(self.columns.len())
+            .unwrap_or(u32::MAX)
+            .saturating_add(
+                u32::try_from(self.searchable_columns.len())
+                    .unwrap_or(u32::MAX)
+                    .saturating_mul(2),
+            );
+        policy.check_complexity(complexity)?;
+
+        let mut sql = format!("SELECT {} FROM {}", columns.join(", "), table);
+        let binds = vec![
+            BindValue::Text(format!("%{}%", self.text)),
+            BindValue::Integer(i64::from(limit)),
+        ];
+
+        let predicates = searchable_columns
+            .iter()
+            .map(|column| format!("{column} ILIKE $1"))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+        sql.push_str(" WHERE (");
+        sql.push_str(&predicates);
+        sql.push(')');
+        sql.push_str(" LIMIT $2");
 
         Ok(QueryPlan { sql, binds })
     }
@@ -277,6 +343,59 @@ mod tests {
             request.build(&policy),
             Err(QueryBuilderError::Policy(
                 PolicyError::ComplexityExceeded { .. }
+            ))
+        ));
+    }
+
+    #[test]
+    fn builds_parameterized_search_with_ilike_over_allowed_columns() {
+        let request = SearchRequest {
+            table: "users".into(),
+            columns: vec!["id".into(), "email".into()],
+            searchable_columns: vec!["email".into()],
+            text: "alice".into(),
+            limit: Some(5),
+        };
+
+        let plan = request.build(&users_policy()).expect("valid query plan");
+        assert_eq!(
+            plan.sql,
+            "SELECT \"id\", \"email\" FROM \"users\" WHERE (\"email\" ILIKE $1) LIMIT $2"
+        );
+        assert_eq!(
+            plan.binds,
+            vec![BindValue::Text("%alice%".into()), BindValue::Integer(5)]
+        );
+    }
+
+    #[test]
+    fn rejects_search_with_no_searchable_columns() {
+        let request = SearchRequest {
+            table: "users".into(),
+            columns: vec!["id".into()],
+            searchable_columns: vec![],
+            text: "alice".into(),
+            limit: Some(5),
+        };
+        assert_eq!(
+            request.build(&users_policy()),
+            Err(QueryBuilderError::EmptySearchColumns)
+        );
+    }
+
+    #[test]
+    fn rejects_search_on_disallowed_column() {
+        let request = SearchRequest {
+            table: "users".into(),
+            columns: vec!["id".into()],
+            searchable_columns: vec!["password_hash".into()],
+            text: "alice".into(),
+            limit: Some(5),
+        };
+        assert!(matches!(
+            request.build(&users_policy()),
+            Err(QueryBuilderError::Policy(
+                PolicyError::ColumnNotAllowed { .. }
             ))
         ));
     }
