@@ -27,8 +27,8 @@ async fn main() -> anyhow::Result<()> {
     let _policy = Policy::new(config.policy);
     tracing::info!(tables = policy_table_count, "policy engine ready");
 
-    if let Some(postgres_config) = config.postgres.as_ref() {
-        let _postgres_backend = PostgresBackend::connect(postgres_config).await?;
+    if let Some(postgres_config) = config::PostgresConfig::from_env()? {
+        let _postgres_backend = PostgresBackend::connect(&postgres_config).await?;
         tracing::info!("PostgreSQL read-only connection established");
     }
 

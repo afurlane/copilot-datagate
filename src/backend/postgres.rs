@@ -27,7 +27,7 @@ pub struct PostgresBackend {
 
 impl PostgresBackend {
     pub async fn connect(config: &PostgresConfig) -> Result<Self, PostgresBackendError> {
-        if !config.validate() {
+        if config.max_connections == 0 || config.acquire_timeout_secs == 0 {
             return Err(PostgresBackendError::InvalidConfiguration);
         }
 
@@ -43,7 +43,7 @@ impl PostgresBackend {
                         .map(|_| ())
                 })
             })
-            .connect(&config.url)
+            .connect_with(config.connect_options.clone())
             .await
             .map_err(PostgresBackendError::Connect)?;
 
@@ -56,11 +56,11 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn rejects_empty_connection_url_without_attempting_to_connect() {
+    async fn rejects_zero_acquire_timeout_without_attempting_to_connect() {
         let config = PostgresConfig {
-            url: String::new(),
+            connect_options: sqlx::postgres::PgConnectOptions::new(),
             max_connections: 1,
-            acquire_timeout_secs: 1,
+            acquire_timeout_secs: 0,
         };
         let result = PostgresBackend::connect(&config).await;
         assert!(matches!(
@@ -71,8 +71,11 @@ mod tests {
 
     #[tokio::test]
     async fn rejects_zero_pool_size_without_attempting_to_connect() {
+        let options = sqlx::postgres::PgConnectOptions::new()
+            .host("localhost")
+            .database("application");
         let config = PostgresConfig {
-            url: "postgres://readonly:secret@localhost/application".to_string(),
+            connect_options: options,
             max_connections: 0,
             acquire_timeout_secs: 1,
         };
