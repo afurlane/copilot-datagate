@@ -29,16 +29,23 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Cache Cargo
+      - name: Cache Cargo registry
         uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            cargo-${{ runner.os }}-
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache Cargo build
+        uses: actions/cache@v6
+        with:
+          path: target
+          key: cargo-build-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-build-${{ runner.os }}-
 
       - name: Check formatting
         run: cargo fmt --all -- --check
@@ -64,11 +71,29 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache Cargo security tools
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin
+          key: cargo-security-tools-${{ runner.os }}
+          restore-keys: |
+            cargo-security-tools-${{ runner.os }}-
+
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        run: command -v cargo-audit >/dev/null || cargo install cargo-audit --locked
 
       - name: Install cargo-deny
-        run: cargo install cargo-deny --locked
+        run: command -v cargo-deny >/dev/null || cargo install cargo-deny --locked
 
       - name: Run cargo audit
         run: cargo audit
@@ -90,11 +115,21 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
 
+      - name: Cache SonarScanner
+        uses: actions/cache@v6
+        with:
+          path: |
+            sonar-scanner
+            ~/.sonar/cache
+          key: sonar-scanner-8.0.1-${{ runner.os }}
+
       - name: Download SonarScanner CLI
         run: |
-          curl -sSLo sonar.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.0.1.6346-linux-x64.zip
-          unzip sonar.zip
-          mv sonar-scanner-* sonar-scanner
+          if [[ ! -x sonar-scanner/bin/sonar-scanner ]]; then
+            curl -sSLo sonar.zip https://binaries.sonarsource.com/Distribution/sonar-scanner-cli/sonar-scanner-cli-8.0.1.6346-linux-x64.zip
+            unzip -q sonar.zip
+            mv sonar-scanner-* sonar-scanner
+          fi
           echo "$PWD/sonar-scanner/bin" >> $GITHUB_PATH
 
       - name: Setup Rust for coverage
@@ -102,10 +137,30 @@ jobs:
         with:
           components: llvm-tools-preview
 
+      - name: Cache Cargo registry
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-registry-${{ runner.os }}-
+
+      - name: Cache Cargo coverage build and tools
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin
+            target
+          key: cargo-coverage-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-coverage-${{ runner.os }}-
+
       - name: Install coverage tools
         run: |
-          cargo install cargo-llvm-cov --locked
-          cargo install lcov2generic --locked
+          command -v cargo-llvm-cov >/dev/null || cargo install cargo-llvm-cov --locked
+          command -v lcov2generic >/dev/null || cargo install lcov2generic --locked
 
       - name: Generate LCOV and convert for Sonar
         run: |

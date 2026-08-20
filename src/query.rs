@@ -125,40 +125,19 @@ impl SelectRequest {
             return Err(QueryBuilderError::EmptyColumns);
         }
 
-        policy.check_table(&self.table)?;
-        let table = quote_identifier(&self.table)?;
-        let mut columns = Vec::with_capacity(self.columns.len());
-        for column in &self.columns {
-            policy.check_column(&self.table, column)?;
-            columns.push(quote_identifier(column)?);
-        }
+        let table = validate_table(policy, &self.table)?;
+        let columns = validate_columns(policy, &self.table, &self.columns)?;
 
         let limit = policy.resolve_row_limit(self.limit)?;
-        let complexity = u32::try_from(self.columns.len())
-            .unwrap_or(u32::MAX)
-            .saturating_add(
-                u32::try_from(self.filters.len())
-                    .unwrap_or(u32::MAX)
-                    .saturating_mul(2),
-            );
-        policy.check_complexity(complexity)?;
+        policy.check_complexity(query_complexity(self.columns.len(), self.filters.len()))?;
         let mut sql = format!("SELECT {} FROM {}", columns.join(", "), table);
         let mut binds = Vec::with_capacity(self.filters.len() + 1);
 
         if !self.filters.is_empty() {
-            let mut predicates = Vec::with_capacity(self.filters.len());
-            for (index, filter) in self.filters.iter().enumerate() {
-                policy.check_column(&self.table, &filter.column)?;
-                predicates.push(format!(
-                    "{} {} ${}",
-                    quote_identifier(&filter.column)?,
-                    filter.operator.sql(),
-                    index + 1
-                ));
-                binds.push(filter.value.clone());
-            }
+            let (predicates, filter_binds) = build_filters(policy, &self.table, &self.filters)?;
+            binds.extend(filter_binds);
             sql.push_str(" WHERE ");
-            sql.push_str(&predicates.join(" AND "));
+            sql.push_str(&predicates);
         }
 
         binds.push(BindValue::Integer(i64::from(limit)));
@@ -178,30 +157,15 @@ impl SearchRequest {
             return Err(QueryBuilderError::EmptySearchColumns);
         }
 
-        policy.check_table(&self.table)?;
-        let table = quote_identifier(&self.table)?;
-
-        let mut columns = Vec::with_capacity(self.columns.len());
-        for column in &self.columns {
-            policy.check_column(&self.table, column)?;
-            columns.push(quote_identifier(column)?);
-        }
-
-        let mut searchable_columns = Vec::with_capacity(self.searchable_columns.len());
-        for column in &self.searchable_columns {
-            policy.check_column(&self.table, column)?;
-            searchable_columns.push(quote_identifier(column)?);
-        }
+        let table = validate_table(policy, &self.table)?;
+        let columns = validate_columns(policy, &self.table, &self.columns)?;
+        let searchable_columns = validate_columns(policy, &self.table, &self.searchable_columns)?;
 
         let limit = policy.resolve_row_limit(self.limit)?;
-        let complexity = u32::try_from(self.columns.len())
-            .unwrap_or(u32::MAX)
-            .saturating_add(
-                u32::try_from(self.searchable_columns.len())
-                    .unwrap_or(u32::MAX)
-                    .saturating_mul(2),
-            );
-        policy.check_complexity(complexity)?;
+        policy.check_complexity(query_complexity(
+            self.columns.len(),
+            self.searchable_columns.len(),
+        ))?;
 
         let mut sql = format!("SELECT {} FROM {}", columns.join(", "), table);
         let binds = vec![
@@ -230,8 +194,7 @@ impl AggregateRequest {
             return Err(QueryBuilderError::EmptyAggregates);
         }
 
-        policy.check_table(&self.table)?;
-        let table = quote_identifier(&self.table)?;
+        let table = validate_table(policy, &self.table)?;
         let mut expressions = Vec::with_capacity(self.operations.len());
         for operation in &self.operations {
             let column =
@@ -249,35 +212,68 @@ impl AggregateRequest {
             expressions.push(expression);
         }
 
-        let complexity = u32::try_from(self.operations.len())
-            .unwrap_or(u32::MAX)
-            .saturating_add(
-                u32::try_from(self.filters.len())
-                    .unwrap_or(u32::MAX)
-                    .saturating_mul(2),
-            );
-        policy.check_complexity(complexity)?;
+        policy.check_complexity(query_complexity(self.operations.len(), self.filters.len()))?;
 
         let mut sql = format!("SELECT {} FROM {table}", expressions.join(", "));
         let mut binds = Vec::with_capacity(self.filters.len());
         if !self.filters.is_empty() {
-            let mut predicates = Vec::with_capacity(self.filters.len());
-            for (index, filter) in self.filters.iter().enumerate() {
-                policy.check_column(&self.table, &filter.column)?;
-                predicates.push(format!(
-                    "{} {} ${}",
-                    quote_identifier(&filter.column)?,
-                    filter.operator.sql(),
-                    index + 1
-                ));
-                binds.push(filter.value.clone());
-            }
+            let (predicates, filter_binds) = build_filters(policy, &self.table, &self.filters)?;
+            binds.extend(filter_binds);
             sql.push_str(" WHERE ");
-            sql.push_str(&predicates.join(" AND "));
+            sql.push_str(&predicates);
         }
 
         Ok(QueryPlan { sql, binds })
     }
+}
+
+fn validate_table(policy: &Policy, table: &str) -> Result<String, QueryBuilderError> {
+    policy.check_table(table)?;
+    quote_identifier(table)
+}
+
+fn validate_columns(
+    policy: &Policy,
+    table: &str,
+    columns: &[String],
+) -> Result<Vec<String>, QueryBuilderError> {
+    columns
+        .iter()
+        .map(|column| {
+            policy.check_column(table, column)?;
+            quote_identifier(column)
+        })
+        .collect()
+}
+
+fn build_filters(
+    policy: &Policy,
+    table: &str,
+    filters: &[Filter],
+) -> Result<(String, Vec<BindValue>), QueryBuilderError> {
+    let mut predicates = Vec::with_capacity(filters.len());
+    let mut binds = Vec::with_capacity(filters.len());
+    for (index, filter) in filters.iter().enumerate() {
+        policy.check_column(table, &filter.column)?;
+        predicates.push(format!(
+            "{} {} ${}",
+            quote_identifier(&filter.column)?,
+            filter.operator.sql(),
+            index + 1
+        ));
+        binds.push(filter.value.clone());
+    }
+    Ok((predicates.join(" AND "), binds))
+}
+
+fn query_complexity(primary_terms: usize, secondary_terms: usize) -> u32 {
+    u32::try_from(primary_terms)
+        .unwrap_or(u32::MAX)
+        .saturating_add(
+            u32::try_from(secondary_terms)
+                .unwrap_or(u32::MAX)
+                .saturating_mul(2),
+        )
 }
 
 fn quote_identifier(identifier: &str) -> Result<String, QueryBuilderError> {

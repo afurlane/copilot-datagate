@@ -153,17 +153,14 @@ impl<'a> SelectTool<'a> {
         let internal = self.convert_request(request)?;
         let prepared_request_id = request_id.clone();
 
-        self.runtime
-            .prepare(&request_id, "select", move |policy| {
-                internal
-                    .build(policy)
-                    .map(|plan| PreparedSelect {
-                        request_id: prepared_request_id.clone(),
-                        plan,
-                    })
-                    .map_err(public_error_for_query)
-            })
-            .await
+        let plan = self
+            .runtime
+            .prepare_plan(&request_id, "select", move |policy| internal.build(policy))
+            .await?;
+        Ok(PreparedSelect {
+            request_id: prepared_request_id,
+            plan,
+        })
     }
 
     /// Executes a prepared select through the read-only backend and returns rows only.
@@ -178,7 +175,7 @@ impl<'a> SelectTool<'a> {
                 self.prepare(request),
                 |prepared| (prepared.request_id, prepared.plan),
                 response_from_result,
-                |response| enforce_output_limit(self.runtime.policy, response),
+                |response| enforce_serialized_output_limit(self.runtime.policy, response),
             )
             .await
     }
@@ -226,17 +223,14 @@ impl<'a> SearchTool<'a> {
         };
         let prepared_request_id = request_id.clone();
 
-        self.runtime
-            .prepare(&request_id, "search", move |policy| {
-                internal
-                    .build(policy)
-                    .map(|plan| PreparedSearch {
-                        request_id: prepared_request_id.clone(),
-                        plan,
-                    })
-                    .map_err(public_error_for_query)
-            })
-            .await
+        let plan = self
+            .runtime
+            .prepare_plan(&request_id, "search", move |policy| internal.build(policy))
+            .await?;
+        Ok(PreparedSearch {
+            request_id: prepared_request_id,
+            plan,
+        })
     }
 
     pub async fn execute(
@@ -249,8 +243,8 @@ impl<'a> SearchTool<'a> {
                 backend,
                 self.prepare(request),
                 |prepared| (prepared.request_id, prepared.plan),
-                search_response_from_result,
-                |response| enforce_search_output_limit(self.runtime.policy, response),
+                response_from_result,
+                |response| enforce_serialized_output_limit(self.runtime.policy, response),
             )
             .await
     }
@@ -298,17 +292,16 @@ impl<'a> AggregateTool<'a> {
         };
         let prepared_request_id = request_id.clone();
 
-        self.runtime
-            .prepare(&request_id, "aggregate", move |policy| {
-                internal
-                    .build(policy)
-                    .map(|plan| PreparedAggregate {
-                        request_id: prepared_request_id.clone(),
-                        plan,
-                    })
-                    .map_err(public_error_for_query)
+        let plan = self
+            .runtime
+            .prepare_plan(&request_id, "aggregate", move |policy| {
+                internal.build(policy)
             })
-            .await
+            .await?;
+        Ok(PreparedAggregate {
+            request_id: prepared_request_id,
+            plan,
+        })
     }
 
     pub async fn execute(
@@ -321,7 +314,7 @@ impl<'a> AggregateTool<'a> {
                 backend,
                 self.prepare(request),
                 |prepared| (prepared.request_id, prepared.plan),
-                aggregate_response_from_result,
+                response_from_result,
                 |response| enforce_serialized_output_limit(self.runtime.policy, response),
             )
             .await
@@ -425,6 +418,21 @@ impl<'a> ToolRuntime<'a> {
         }
     }
 
+    async fn prepare_plan<F>(
+        &self,
+        request_id: &str,
+        operation: &str,
+        build: F,
+    ) -> Result<QueryPlan, PublicError>
+    where
+        F: FnOnce(&Policy) -> Result<QueryPlan, QueryBuilderError>,
+    {
+        self.prepare(request_id, operation, |policy| {
+            build(policy).map_err(public_error_for_query)
+        })
+        .await
+    }
+
     async fn execute<P, T, Prepare, Split, BuildResponse, CheckOutput>(
         &self,
         backend: &PostgresBackend,
@@ -503,36 +511,6 @@ fn response_from_result(request_id: String, result: SelectResult) -> SelectToolR
         columns: result.columns,
         rows: result.rows,
     }
-}
-
-fn search_response_from_result(request_id: String, result: SelectResult) -> SearchToolResponse {
-    SearchToolResponse {
-        request_id,
-        columns: result.columns,
-        rows: result.rows,
-    }
-}
-
-fn aggregate_response_from_result(
-    request_id: String,
-    result: SelectResult,
-) -> AggregateToolResponse {
-    SelectToolResponse {
-        request_id,
-        columns: result.columns,
-        rows: result.rows,
-    }
-}
-
-fn enforce_output_limit(policy: &Policy, response: &SelectToolResponse) -> Result<(), PublicError> {
-    enforce_serialized_output_limit(policy, response)
-}
-
-fn enforce_search_output_limit(
-    policy: &Policy,
-    response: &SearchToolResponse,
-) -> Result<(), PublicError> {
-    enforce_serialized_output_limit(policy, response)
 }
 
 fn enforce_serialized_output_limit<T: Serialize>(
@@ -719,7 +697,7 @@ mod tests {
         };
 
         assert_eq!(
-            enforce_output_limit(&strict_policy, &response).unwrap_err(),
+            enforce_serialized_output_limit(&strict_policy, &response).unwrap_err(),
             PublicError::policy_denied()
         );
     }
@@ -860,7 +838,7 @@ mod tests {
         };
 
         assert_eq!(
-            enforce_search_output_limit(&strict_policy, &response).unwrap_err(),
+            enforce_serialized_output_limit(&strict_policy, &response).unwrap_err(),
             PublicError::policy_denied()
         );
     }
@@ -872,7 +850,7 @@ mod tests {
             columns: vec!["id".into()],
             rows: vec![serde_json::json!({"id": 1})],
         };
-        assert!(enforce_output_limit(&policy(), &response).is_ok());
+        assert!(enforce_serialized_output_limit(&policy(), &response).is_ok());
     }
 
     #[test]
