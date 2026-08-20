@@ -6,7 +6,7 @@
 - [x] Schema loader
 - [x] Policy engine (base)
 - [x] Query builder controllato (select + filters + limit)
-- [x] MCP tool: `select` (typed contract + policy/audit/error boundary; transport execution follows)
+- [x] MCP tool: `select` (typed contract + read-only execution; transport follows)
 - [x] Audit log (foundation JSONL; tool-level coverage follows MCP layer)
 - [x] Errori strutturati (public sanitized error envelope)
 - [ ] README completo

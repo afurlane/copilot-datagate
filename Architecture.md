@@ -114,9 +114,9 @@ un input schema esplicito. I tool di lettura dati riusano il catalogo schema e n
 accettano SQL, frammenti SQL o identificatori non validati.
 
 Il primo contratto implementato è `select`: converte il payload JSON in un piano interno,
-valida policy e tipi dei filtri, registra l'esito nell'audit log e restituisce solo errori
-pubblici sanitizzati. Il piano SQL resta interno; il transport MCP e il mapping delle
-righe PostgreSQL sono step successivi.
+valida policy e tipi dei filtri, esegue il piano tramite il pool read-only, registra
+l'esito nell'audit log e restituisce righe JSON senza il SQL. Il transport MCP resta uno
+step successivo; nessun altro percorso può eseguire SQL arbitrario.
 
 ## 6) Observability Layer
 Include metriche, audit log, errori strutturati, limiti applicati, tempi di risposta.

@@ -2,10 +2,13 @@
 
 use std::time::Duration;
 
-use sqlx::postgres::{PgPool, PgPoolOptions};
+use serde_json::{Map, Value};
+use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
+use sqlx::{Column, Row, TypeInfo};
 use thiserror::Error;
 
 use crate::config::PostgresConfig;
+use crate::query::{BindValue, QueryPlan};
 use crate::schema::{SchemaCatalog, SchemaLoaderError};
 
 #[derive(Debug, Error)]
@@ -16,6 +19,10 @@ pub enum PostgresBackendError {
     Connect(#[source] sqlx::Error),
     #[error("unable to load PostgreSQL schema metadata")]
     Schema(#[source] SchemaLoaderError),
+    #[error("unable to execute the controlled PostgreSQL select")]
+    Execute(#[source] sqlx::Error),
+    #[error("unable to serialize a PostgreSQL result value")]
+    ResultValue,
 }
 
 /// Owns a pool whose connections default to read-only transactions.
@@ -58,6 +65,90 @@ impl PostgresBackend {
             .await
             .map_err(PostgresBackendError::Schema)
     }
+
+    /// Executes only a plan created by the controlled query builder.
+    pub(crate) async fn execute_select(
+        &self,
+        plan: &QueryPlan,
+    ) -> Result<SelectResult, PostgresBackendError> {
+        let mut query = sqlx::query(&plan.sql);
+        for bind in &plan.binds {
+            query = match bind {
+                BindValue::Text(value) => query.bind(value),
+                BindValue::Integer(value) => query.bind(value),
+                BindValue::Decimal(value) => query.bind(value),
+                BindValue::Boolean(value) => query.bind(value),
+            };
+        }
+
+        let rows = query
+            .fetch_all(&self.pool)
+            .await
+            .map_err(PostgresBackendError::Execute)?;
+        let columns = rows
+            .first()
+            .map(|row| {
+                row.columns()
+                    .iter()
+                    .map(|column| column.name().to_string())
+                    .collect()
+            })
+            .unwrap_or_default();
+        let rows = rows
+            .into_iter()
+            .map(row_to_json)
+            .collect::<Result<_, _>>()?;
+        Ok(SelectResult { columns, rows })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct SelectResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Value>,
+}
+
+fn row_to_json(row: PgRow) -> Result<Value, PostgresBackendError> {
+    let mut object = Map::new();
+    for column in row.columns() {
+        let name = column.name().to_string();
+        let value = match column.type_info().name() {
+            "BOOL" => row
+                .try_get::<Option<bool>, _>(column.ordinal())
+                .map(json_or_null),
+            "INT2" => row
+                .try_get::<Option<i16>, _>(column.ordinal())
+                .map(|value| json_or_null(value.map(i64::from))),
+            "INT4" => row
+                .try_get::<Option<i32>, _>(column.ordinal())
+                .map(|value| json_or_null(value.map(i64::from))),
+            "INT8" => row
+                .try_get::<Option<i64>, _>(column.ordinal())
+                .map(json_or_null),
+            "FLOAT4" => row
+                .try_get::<Option<f32>, _>(column.ordinal())
+                .map(|value| json_or_null(value.map(f64::from))),
+            "FLOAT8" => row
+                .try_get::<Option<f64>, _>(column.ordinal())
+                .map(json_or_null),
+            "JSON" | "JSONB" => row
+                .try_get::<Option<Value>, _>(column.ordinal())
+                .map(json_or_null),
+            _ => row
+                .try_get::<Option<String>, _>(column.ordinal())
+                .map(json_or_null),
+        }
+        .map_err(|_| PostgresBackendError::ResultValue)?;
+        object.insert(name, value);
+    }
+    Ok(Value::Object(object))
+}
+
+fn json_or_null<T>(value: Option<T>) -> Value
+where
+    T: Into<Value>,
+{
+    value.map_or(Value::Null, Into::into)
 }
 
 #[cfg(test)]

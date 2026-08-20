@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::audit::{AuditEvent, AuditLogger, AuditOutcome};
+use crate::backend::postgres::{PostgresBackend, SelectResult};
 use crate::error::PublicError;
 use crate::policy::Policy;
 use crate::query::{
@@ -46,6 +47,13 @@ pub enum SelectToolOperator {
 pub struct PreparedSelect {
     pub request_id: String,
     pub plan: QueryPlan,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct SelectToolResponse {
+    pub request_id: String,
+    pub columns: Vec<String>,
+    pub rows: Vec<Value>,
 }
 
 pub struct SelectTool<'a> {
@@ -97,6 +105,20 @@ impl<'a> SelectTool<'a> {
         }
     }
 
+    /// Executes a prepared select through the read-only backend and returns rows only.
+    pub async fn execute(
+        &self,
+        backend: &PostgresBackend,
+        request: SelectToolRequest,
+    ) -> Result<SelectToolResponse, PublicError> {
+        let prepared = self.prepare(request).await?;
+        let result = backend
+            .execute_select(&prepared.plan)
+            .await
+            .map_err(|_| PublicError::backend_unavailable())?;
+        Ok(response_from_result(prepared.request_id, result))
+    }
+
     fn convert_request(&self, request: SelectToolRequest) -> Result<SelectRequest, PublicError> {
         let filters = request
             .filters
@@ -122,6 +144,14 @@ impl<'a> SelectTool<'a> {
         if let Some(audit) = self.audit {
             let _ = audit.record(&event).await;
         }
+    }
+}
+
+fn response_from_result(request_id: String, result: SelectResult) -> SelectToolResponse {
+    SelectToolResponse {
+        request_id,
+        columns: result.columns,
+        rows: result.rows,
     }
 }
 
