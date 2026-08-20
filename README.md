@@ -74,7 +74,7 @@ Documentazione completa:
 - [ ] Definizione del policy engine
 - [ ] Implementazione del query builder controllato
 - [ ] Connessione read-only garantita
-- [ ] Schema awareness automatica
+- [x] Schema awareness automatica (catalogo interno PostgreSQL)
 - [ ] Metriche + audit log
 - [ ] Tool MCP iniziali
 - [ ] Supporto multi-database

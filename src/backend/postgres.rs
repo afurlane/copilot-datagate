@@ -6,6 +6,7 @@ use sqlx::postgres::{PgPool, PgPoolOptions};
 use thiserror::Error;
 
 use crate::config::PostgresConfig;
+use crate::schema::{SchemaCatalog, SchemaLoaderError};
 
 #[derive(Debug, Error)]
 pub enum PostgresBackendError {
@@ -13,6 +14,8 @@ pub enum PostgresBackendError {
     InvalidConfiguration,
     #[error("unable to establish a PostgreSQL read-only connection")]
     Connect(#[source] sqlx::Error),
+    #[error("unable to load PostgreSQL schema metadata")]
+    Schema(#[source] SchemaLoaderError),
 }
 
 /// Owns a pool whose connections default to read-only transactions.
@@ -48,6 +51,12 @@ impl PostgresBackend {
             .map_err(PostgresBackendError::Connect)?;
 
         Ok(Self { pool })
+    }
+
+    pub(crate) async fn load_schema(&self) -> Result<SchemaCatalog, PostgresBackendError> {
+        SchemaCatalog::load(&self.pool)
+            .await
+            .map_err(PostgresBackendError::Schema)
     }
 }
 
