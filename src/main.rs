@@ -4,6 +4,8 @@
 mod backend;
 mod config;
 mod policy;
+#[allow(dead_code)]
+mod query;
 mod schema;
 
 use backend::postgres::PostgresBackend;
