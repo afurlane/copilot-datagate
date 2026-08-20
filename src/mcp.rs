@@ -690,4 +690,63 @@ mod tests {
             PublicError::policy_denied()
         );
     }
+
+    #[test]
+    fn accepts_response_within_output_limit() {
+        let response = SelectToolResponse {
+            request_id: "request-5".into(),
+            columns: vec!["id".into()],
+            rows: vec![serde_json::json!({"id": 1})],
+        };
+        assert!(enforce_output_limit(&policy(), &response).is_ok());
+    }
+
+    #[test]
+    fn rejects_u64_json_numbers_that_do_not_fit_i64() {
+        let too_large = serde_json::Number::from(u64::MAX);
+        let err = bind_value(Value::Number(too_large)).unwrap_err();
+        assert_eq!(err, PublicError::invalid_request());
+    }
+
+    #[test]
+    fn maps_all_select_tool_operators() {
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::Equals),
+            FilterOperator::Equals
+        );
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::NotEquals),
+            FilterOperator::NotEquals
+        );
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::LessThan),
+            FilterOperator::LessThan
+        );
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::LessThanOrEqual),
+            FilterOperator::LessThanOrEqual
+        );
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::GreaterThan),
+            FilterOperator::GreaterThan
+        );
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::GreaterThanOrEqual),
+            FilterOperator::GreaterThanOrEqual
+        );
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::Like),
+            FilterOperator::Like
+        );
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::ILike),
+            FilterOperator::ILike
+        );
+    }
+
+    #[test]
+    fn elapsed_ms_saturates_at_u64_max() {
+        let duration = std::time::Duration::from_secs(u64::MAX);
+        assert_eq!(elapsed_ms(duration), u64::MAX);
+    }
 }

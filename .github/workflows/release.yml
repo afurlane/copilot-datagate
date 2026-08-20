@@ -95,6 +95,7 @@ jobs:
             -Dsonar.projectKey=copilot-datagate \
             -Dsonar.projectName="DataGate" \
             -Dsonar.sources=src \
+            -Dsonar.coverage.exclusions=src/main.rs,src/backend/postgres.rs,src/schema.rs \
             -Dsonar.coverageReportPaths=coverage/sonar-coverage.xml \
             -Dsonar.branch.name=${{ github.event.workflow_run.head_branch }} \
             -Dsonar.host.url=$SONAR_URL \

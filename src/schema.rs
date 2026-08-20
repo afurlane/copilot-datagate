@@ -264,4 +264,57 @@ mod tests {
         assert_eq!(result[1].columns.len(), 1);
         assert_eq!(result[1].columns[0].relation, "orders");
     }
+
+    #[test]
+    fn keeps_relations_with_no_matching_columns() {
+        let relations = vec![RelationRow {
+            schema: "public".into(),
+            name: "events".into(),
+        }];
+        let columns = vec![ColumnInfo {
+            schema: "public".into(),
+            relation: "users".into(),
+            name: "id".into(),
+            data_type: "integer".into(),
+            ordinal_position: 1,
+        }];
+
+        let result = attach_columns(relations, &columns);
+        assert_eq!(result.len(), 1);
+        assert!(result[0].columns.is_empty());
+    }
+
+    #[test]
+    fn distinguishes_same_relation_name_across_schemas() {
+        let relations = vec![
+            RelationRow {
+                schema: "public".into(),
+                name: "users".into(),
+            },
+            RelationRow {
+                schema: "audit".into(),
+                name: "users".into(),
+            },
+        ];
+        let columns = vec![
+            ColumnInfo {
+                schema: "public".into(),
+                relation: "users".into(),
+                name: "id".into(),
+                data_type: "integer".into(),
+                ordinal_position: 1,
+            },
+            ColumnInfo {
+                schema: "audit".into(),
+                relation: "users".into(),
+                name: "action".into(),
+                data_type: "text".into(),
+                ordinal_position: 1,
+            },
+        ];
+
+        let result = attach_columns(relations, &columns);
+        assert_eq!(result[0].columns[0].name, "id");
+        assert_eq!(result[1].columns[0].name, "action");
+    }
 }
