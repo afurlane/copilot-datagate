@@ -27,25 +27,16 @@ async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt::init();
     tracing::info!("DataGate starting (skeleton build, no backend wired yet)");
 
-    let metrics = MetricsRegistry::new();
-    let metrics_snapshot = metrics.snapshot();
+    let metrics_snapshot = init_metrics_snapshot();
     tracing::debug!(
         requests_total = metrics_snapshot.requests_total,
         "metrics registry initialized"
     );
 
-    let _rate_limiter = match (
-        std::env::var("RATE_LIMIT_REQUESTS"),
-        std::env::var("RATE_LIMIT_WINDOW_SECS"),
-    ) {
-        (Ok(max_requests), Ok(window_secs)) => match (max_requests.parse(), window_secs.parse()) {
-            (Ok(max_requests), Ok(window_secs)) => {
-                RateLimiter::new(max_requests, std::time::Duration::from_secs(window_secs))
-            }
-            _ => None,
-        },
-        _ => None,
-    };
+    let _rate_limiter = build_rate_limiter(
+        std::env::var("RATE_LIMIT_REQUESTS").ok().as_deref(),
+        std::env::var("RATE_LIMIT_WINDOW_SECS").ok().as_deref(),
+    );
 
     if let Ok(path) = std::env::var("AUDIT_LOG_PATH") {
         AuditLogger::new(path)
@@ -53,8 +44,7 @@ async fn main() -> anyhow::Result<()> {
             .await?;
     }
 
-    let config_path =
-        std::env::var("DATAGATE_CONFIG").unwrap_or_else(|_| "datagate.toml".to_string());
+    let config_path = resolve_config_path(std::env::var("DATAGATE_CONFIG").ok());
     let config = match Config::load(&config_path) {
         Ok(config) => config,
         Err(err) => {
@@ -82,4 +72,63 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn init_metrics_snapshot() -> metrics::MetricsSnapshot {
+    MetricsRegistry::new().snapshot()
+}
+
+fn resolve_config_path(override_path: Option<String>) -> String {
+    override_path.unwrap_or_else(|| "datagate.toml".to_string())
+}
+
+fn build_rate_limiter(
+    max_requests: Option<&str>,
+    window_secs: Option<&str>,
+) -> Option<RateLimiter> {
+    let max_requests = max_requests?.parse().ok()?;
+    let window_secs = window_secs?.parse().ok()?;
+    RateLimiter::new(max_requests, std::time::Duration::from_secs(window_secs))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolves_default_config_path_when_override_missing() {
+        assert_eq!(resolve_config_path(None), "datagate.toml");
+    }
+
+    #[test]
+    fn uses_config_path_override_when_provided() {
+        assert_eq!(
+            resolve_config_path(Some("custom.toml".to_string())),
+            "custom.toml"
+        );
+    }
+
+    #[test]
+    fn builds_rate_limiter_for_valid_values() {
+        assert!(build_rate_limiter(Some("10"), Some("60")).is_some());
+    }
+
+    #[test]
+    fn does_not_build_rate_limiter_for_invalid_values() {
+        assert!(build_rate_limiter(None, Some("60")).is_none());
+        assert!(build_rate_limiter(Some("10"), None).is_none());
+        assert!(build_rate_limiter(Some("x"), Some("60")).is_none());
+        assert!(build_rate_limiter(Some("10"), Some("0")).is_none());
+    }
+
+    #[test]
+    fn initializes_empty_metrics_snapshot() {
+        let snapshot = init_metrics_snapshot();
+        assert_eq!(snapshot.requests_total, 0);
+        assert_eq!(snapshot.requests_accepted, 0);
+        assert_eq!(snapshot.requests_rejected, 0);
+        assert_eq!(snapshot.backend_errors, 0);
+        assert_eq!(snapshot.p95_latency_ms, None);
+        assert_eq!(snapshot.pool, None);
+    }
 }

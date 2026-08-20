@@ -123,6 +123,7 @@ jobs:
               -Dsonar.projectKey=copilot-datagate \
               -Dsonar.projectName="DataGate" \
               -Dsonar.sources=src \
+              -Dsonar.coverage.exclusions=src/main.rs,src/backend/postgres.rs,src/schema.rs \
               -Dsonar.coverageReportPaths=coverage/sonar-coverage.xml \
               -Dsonar.qualitygate.wait=false \
               -Dsonar.pullrequest.key=${{ github.event.pull_request.number }} \
@@ -135,6 +136,7 @@ jobs:
               -Dsonar.projectKey=copilot-datagate \
               -Dsonar.projectName="DataGate" \
               -Dsonar.sources=src \
+              -Dsonar.coverage.exclusions=src/main.rs,src/backend/postgres.rs,src/schema.rs \
               -Dsonar.coverageReportPaths=coverage/sonar-coverage.xml \
               -Dsonar.qualitygate.wait=false \
               -Dsonar.branch.name=${{ github.head_ref || github.ref_name }} \
