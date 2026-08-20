@@ -17,6 +17,8 @@ pub enum PolicyError {
     RowLimitExceeded { requested: u32, max: u32 },
     #[error("query complexity {requested} exceeds policy maximum {max}")]
     ComplexityExceeded { requested: u32, max: u32 },
+    #[error("output size {requested} bytes exceeds policy maximum {max} bytes")]
+    OutputLimitExceeded { requested: u32, max: u32 },
 }
 
 #[derive(Debug, Default, Clone)]
@@ -81,6 +83,17 @@ impl Policy {
             Ok(())
         }
     }
+
+    pub fn check_output_bytes(&self, output_bytes: u32) -> Result<(), PolicyError> {
+        if output_bytes > self.config.max_output_bytes {
+            Err(PolicyError::OutputLimitExceeded {
+                requested: output_bytes,
+                max: self.config.max_output_bytes,
+            })
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -103,6 +116,7 @@ mod tests {
             default_row_limit: 50,
             max_row_limit: 200,
             max_query_complexity: 100,
+            max_output_bytes: 10_000,
         })
     }
 
@@ -192,6 +206,20 @@ mod tests {
             PolicyError::ComplexityExceeded {
                 requested: 101,
                 max: 100,
+            }
+        );
+    }
+
+    #[test]
+    fn denies_output_size_above_max() {
+        let err = policy_with_users_id_email()
+            .check_output_bytes(10_001)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            PolicyError::OutputLimitExceeded {
+                requested: 10_001,
+                max: 10_000,
             }
         );
     }
