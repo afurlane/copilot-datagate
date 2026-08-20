@@ -8,6 +8,7 @@ use serde_json::Value;
 use crate::audit::{AuditEvent, AuditLogger, AuditOutcome};
 use crate::backend::postgres::{PostgresBackend, SelectResult};
 use crate::error::PublicError;
+use crate::metrics::MetricsRegistry;
 use crate::policy::Policy;
 use crate::query::{
     BindValue, Filter, FilterOperator, QueryBuilderError, QueryPlan, SelectRequest,
@@ -61,6 +62,7 @@ pub struct SelectTool<'a> {
     policy: &'a Policy,
     audit: Option<&'a AuditLogger>,
     rate_limiter: Option<&'a RateLimiter>,
+    metrics: Option<&'a MetricsRegistry>,
 }
 
 impl<'a> SelectTool<'a> {
@@ -69,6 +71,7 @@ impl<'a> SelectTool<'a> {
             policy,
             audit,
             rate_limiter: None,
+            metrics: None,
         }
     }
 
@@ -81,7 +84,13 @@ impl<'a> SelectTool<'a> {
             policy,
             audit,
             rate_limiter: Some(rate_limiter),
+            metrics: None,
         }
+    }
+
+    pub fn with_metrics(mut self, metrics: &'a MetricsRegistry) -> Self {
+        self.metrics = Some(metrics);
+        self
     }
 
     /// Converts the MCP request into a policy-validated internal query plan.
@@ -140,13 +149,31 @@ impl<'a> SelectTool<'a> {
         backend: &PostgresBackend,
         request: SelectToolRequest,
     ) -> Result<SelectToolResponse, PublicError> {
-        let prepared = self.prepare(request).await?;
-        let result = backend
-            .execute_select(&prepared.plan)
-            .await
-            .map_err(|_| PublicError::backend_unavailable())?;
+        let started = Instant::now();
+        let prepared = match self.prepare(request).await {
+            Ok(prepared) => prepared,
+            Err(error) => {
+                self.record_rejected_metric(started.elapsed());
+                return Err(error);
+            }
+        };
+        let result = backend.execute_select(&prepared.plan).await;
+        let result = match result {
+            Ok(result) => result,
+            Err(_) => {
+                self.record_backend_error_metric(started.elapsed());
+                return Err(PublicError::backend_unavailable());
+            }
+        };
+
+        self.record_pool_metrics(backend);
         let response = response_from_result(prepared.request_id, result);
-        enforce_output_limit(self.policy, &response)?;
+        if let Err(error) = enforce_output_limit(self.policy, &response) {
+            self.record_rejected_metric(started.elapsed());
+            return Err(error);
+        }
+
+        self.record_accepted_metric(started.elapsed());
         Ok(response)
     }
 
@@ -176,6 +203,35 @@ impl<'a> SelectTool<'a> {
             let _ = audit.record(&event).await;
         }
     }
+
+    fn record_accepted_metric(&self, duration: std::time::Duration) {
+        if let Some(metrics) = self.metrics {
+            metrics.record_accepted(elapsed_ms(duration));
+        }
+    }
+
+    fn record_rejected_metric(&self, duration: std::time::Duration) {
+        if let Some(metrics) = self.metrics {
+            metrics.record_rejected(elapsed_ms(duration));
+        }
+    }
+
+    fn record_backend_error_metric(&self, duration: std::time::Duration) {
+        if let Some(metrics) = self.metrics {
+            metrics.record_backend_error();
+            metrics.record_rejected(elapsed_ms(duration));
+        }
+    }
+
+    fn record_pool_metrics(&self, backend: &PostgresBackend) {
+        if let Some(metrics) = self.metrics {
+            metrics.set_pool_metrics(backend.pool_metrics());
+        }
+    }
+}
+
+fn elapsed_ms(duration: std::time::Duration) -> u64 {
+    duration.as_millis().min(u128::from(u64::MAX)) as u64
 }
 
 fn response_from_result(request_id: String, result: SelectResult) -> SelectToolResponse {
