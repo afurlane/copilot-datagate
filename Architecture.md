@@ -115,6 +115,8 @@ accettano SQL, frammenti SQL o identificatori non validati.
 
 ## 6) Observability Layer
 Include metriche, audit log, errori strutturati, limiti applicati, tempi di risposta.
+La foundation attuale scrive eventi JSONL su `AUDIT_LOG_PATH`, senza SQL, valori di
+filtro o segreti. Il layer MCP dovrà registrare ogni richiesta e il relativo esito.
 
 ## 7) Backend Layer
 Supporta diversi database dell'applicazione: PostgreSQL (oggi), altri DB domani.
