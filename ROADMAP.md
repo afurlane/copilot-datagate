@@ -17,7 +17,7 @@
 - [x] Limiti di output
 - [x] Metriche (latency, p95, errori, pool)
 - [x] MCP tool: `search`
-- [ ] Documentazione interna dei tool
+- [x] Documentazione interna dei tool
 - [ ] Configurazione esterna (TOML/YAML)
 
 ## 🔵 Versione 0.3 — Advanced Query Layer
