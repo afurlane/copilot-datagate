@@ -78,7 +78,8 @@ Policy constraints:
 1. `prepare` validates rate limit (if configured).
 2. JSON request is converted to internal `SelectRequest`.
 3. Query builder validates table/columns/filters and policy limits.
-4. Backend executes a parameterized SELECT.
+4. Backend executes a parameterized SELECT (including advanced predicates for
+    `between` and `full_text` when requested).
 5. Response payload size is validated against `max_output_bytes`.
 
 ### Response Contract
