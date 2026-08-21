@@ -1,12 +1,11 @@
 {
   "bootstrap-sha": "99a100c",
-  "branches": [
-    {
-      "branch": "master",
+  "packages": {
+    ".": {
       "release-type": "rust",
       "package-name": "copilot-datagate",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false
     }
-  ]
+  }
 }
