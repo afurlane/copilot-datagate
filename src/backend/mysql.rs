@@ -184,7 +184,6 @@ mod tests {
                 .host("127.0.0.1")
                 .port(9)
                 .username("reader")
-                .password("secret")
                 .database("application"),
             max_connections: 1,
             acquire_timeout_secs: 1,

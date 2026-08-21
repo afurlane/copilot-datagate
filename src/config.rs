@@ -615,10 +615,7 @@ mod tests {
     fn mysql_config_parses_url_and_pool_overrides() {
         with_mysql_env(
             &[
-                (
-                    "MYSQL_URL",
-                    Some("mysql://reader:secret@localhost:3306/app"),
-                ),
+                ("MYSQL_URL", Some("mysql://reader@localhost:3306/app")),
                 ("MYSQL_MAX_CONNECTIONS", Some("17")),
                 ("MYSQL_ACQUIRE_TIMEOUT_SECS", Some("9")),
             ],
@@ -639,7 +636,7 @@ mod tests {
                 ("MYSQL_HOST", Some("localhost")),
                 ("MYSQL_USER", Some("reader")),
                 ("MYSQL_DATABASE", Some("app")),
-                ("MYSQL_PASSWORD", Some("secret")),
+                ("MYSQL_PASSWORD", None),
                 ("MYSQL_PORT", None),
             ],
             || {
