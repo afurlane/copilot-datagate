@@ -21,10 +21,20 @@ use config::Config;
 use metrics::MetricsRegistry;
 use policy::Policy;
 use rate_limit::RateLimiter;
+use tracing_subscriber::EnvFilter;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LogFormat {
+    Pretty,
+    Json,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    tracing_subscriber::fmt::init();
+    init_logging(
+        std::env::var("LOG_FORMAT").ok().as_deref(),
+        std::env::var("LOG_LEVEL").ok().as_deref(),
+    )?;
     tracing::info!("DataGate starting (skeleton build, no backend wired yet)");
 
     let metrics_snapshot = init_metrics_snapshot();
@@ -86,6 +96,40 @@ fn init_metrics_snapshot() -> metrics::MetricsSnapshot {
     MetricsRegistry::new().snapshot()
 }
 
+fn init_logging(format: Option<&str>, level: Option<&str>) -> anyhow::Result<()> {
+    let format = parse_log_format(format);
+    let level = level.unwrap_or("info");
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
+
+    match format {
+        LogFormat::Pretty => tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .with_target(true)
+            .with_ansi(true)
+            .try_init()
+            .map_err(|err| anyhow::anyhow!(err.to_string())),
+        LogFormat::Json => tracing_subscriber::fmt()
+            .json()
+            .with_env_filter(env_filter)
+            .with_target(true)
+            .with_current_span(false)
+            .with_span_list(false)
+            .try_init()
+            .map_err(|err| anyhow::anyhow!(err.to_string())),
+    }
+}
+
+fn parse_log_format(format: Option<&str>) -> LogFormat {
+    match format
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("json") => LogFormat::Json,
+        _ => LogFormat::Pretty,
+    }
+}
+
 fn resolve_config_path(override_path: Option<String>) -> String {
     override_path.unwrap_or_else(|| "datagate.toml".to_string())
 }
@@ -138,5 +182,19 @@ mod tests {
         assert_eq!(snapshot.backend_errors, 0);
         assert_eq!(snapshot.p95_latency_ms, None);
         assert_eq!(snapshot.pool, None);
+    }
+
+    #[test]
+    fn defaults_to_pretty_log_format() {
+        assert_eq!(parse_log_format(None), LogFormat::Pretty);
+        assert_eq!(parse_log_format(Some("")), LogFormat::Pretty);
+        assert_eq!(parse_log_format(Some("unknown")), LogFormat::Pretty);
+    }
+
+    #[test]
+    fn parses_json_log_format_case_insensitively() {
+        assert_eq!(parse_log_format(Some("json")), LogFormat::Json);
+        assert_eq!(parse_log_format(Some("JSON")), LogFormat::Json);
+        assert_eq!(parse_log_format(Some("  json  ")), LogFormat::Json);
     }
 }

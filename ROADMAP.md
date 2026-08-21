@@ -36,7 +36,7 @@
 - [ ] Test di integrazione multi-backend
 
 ## 🔵 Versione 0.5 — Enterprise Layer
-- [ ] Logging strutturato
+- [x] Logging strutturato
 - [ ] Profilazione performance
 - [ ] Hardening sicurezza
 - [ ] Policy engine dinamico
