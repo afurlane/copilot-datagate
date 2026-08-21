@@ -32,7 +32,7 @@
 - [x] Backend astratto
 - [x] Supporto SQLite
 - [x] Supporto MySQL/MariaDB
-- [ ] Configurazione multi-database
+- [x] Configurazione multi-database
 - [ ] Test di integrazione multi-backend
 
 ## 🔵 Versione 0.5 — Enterprise Layer

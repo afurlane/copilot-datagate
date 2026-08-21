@@ -35,6 +35,10 @@ Current backend implementations behind the read-only abstraction:
 - MySQL/MariaDB
 - SQLite
 
+Backend selection is configurable via `DATAGATE_BACKEND` (`auto`, `postgres`,
+`mysql`/`mariadb`, `sqlite`). In `auto` mode, precedence is PostgreSQL,
+MySQL/MariaDB, then SQLite.
+
 ## Tool: select
 
 ### Request Contract
