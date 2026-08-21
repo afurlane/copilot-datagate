@@ -33,7 +33,7 @@
 - [x] Supporto SQLite
 - [x] Supporto MySQL/MariaDB
 - [x] Configurazione multi-database
-- [ ] Test di integrazione multi-backend
+- [x] Test di integrazione multi-backend
 
 ## 🔵 Versione 0.5 — Enterprise Layer
 - [x] Logging strutturato
