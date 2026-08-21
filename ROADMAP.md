@@ -41,7 +41,7 @@
 - [x] Hardening sicurezza
 - [x] Policy engine dinamico
 - [x] Documentazione completa
-- [ ] Versione 1.0 candidate
+- [x] Versione 1.0 candidate
 
 ## 🔵 Versione 1.0 — Release
 - [ ] Stabilità API MCP

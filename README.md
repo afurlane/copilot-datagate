@@ -171,6 +171,7 @@ Documentazione completa:
 - [Architecture.md](Architecture.md) — design principles e architettura a layer
 - [ROADMAP.md](ROADMAP.md) — roadmap dettagliata verso la 1.0
 - [docs/configuration.md](docs/configuration.md) — quick start, backend, policy e operazioni
+- [docs/release-candidate.md](docs/release-candidate.md) — criteri e gate della 1.0 candidate
 - [docs/mcp-tools.md](docs/mcp-tools.md) — contratti interni e regole dei tool MCP
 - [CONTRIBUTING.md](CONTRIBUTING.md) — regole di contribuzione, commit e branch
 - [SECURITY.md](SECURITY.md) — policy di sicurezza e segnalazione vulnerabilità
