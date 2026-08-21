@@ -17,12 +17,40 @@ use crate::query::{
 };
 use crate::rate_limit::RateLimiter;
 
+pub const MCP_API_VERSION: &str = "1";
 const MAX_REQUEST_ID_LEN: usize = 128;
 const MAX_TEXT_INPUT_BYTES: usize = 4096;
 const MAX_FILTERS: usize = 64;
 const MAX_COLUMNS: usize = 128;
 const MAX_SEARCHABLE_COLUMNS: usize = 64;
 const MAX_AGGREGATE_OPERATIONS: usize = 64;
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum McpToolName {
+    Select,
+    Search,
+    Aggregate,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct McpApiDescriptor {
+    pub api_version: &'static str,
+    pub tools: Vec<McpToolName>,
+}
+
+impl McpApiDescriptor {
+    pub fn current() -> Self {
+        Self {
+            api_version: MCP_API_VERSION,
+            tools: vec![
+                McpToolName::Select,
+                McpToolName::Search,
+                McpToolName::Aggregate,
+            ],
+        }
+    }
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct SelectToolRequest {
@@ -684,6 +712,24 @@ mod tests {
             max_query_complexity: 100,
             max_output_bytes: 10_000,
         })
+    }
+
+    #[test]
+    fn exposes_stable_versioned_mcp_tool_descriptor() {
+        let descriptor = McpApiDescriptor::current();
+        assert_eq!(descriptor.api_version, "1");
+        assert_eq!(
+            descriptor.tools,
+            vec![
+                McpToolName::Select,
+                McpToolName::Search,
+                McpToolName::Aggregate
+            ]
+        );
+        assert_eq!(
+            serde_json::to_string(&descriptor).expect("descriptor is serializable"),
+            r#"{"api_version":"1","tools":["select","search","aggregate"]}"#
+        );
     }
 
     #[tokio::test]

@@ -44,7 +44,7 @@
 - [x] Versione 1.0 candidate
 
 ## 🔵 Versione 1.0 — Release
-- [ ] Stabilità API MCP
+- [x] Stabilità API MCP
 - [ ] Test end-to-end con Copilot
 - [ ] Benchmark
 - [ ] Hardening finale

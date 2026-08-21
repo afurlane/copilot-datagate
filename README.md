@@ -30,6 +30,7 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
   query parametrizzate, policy/rate-limit/metriche/audit e output limit server-side.
 - **MCP `aggregate` tipizzato** — `count`, `sum`, `avg`, `min` e `max` su colonne
     consentite, con filtri parametrizzati e senza supporto a SQL libero o `GROUP BY`.
+- **API MCP versionata** — descriptor stabile per versione API e tool disponibili.
 - **Filtri avanzati** — supporto a pattern (`LIKE`/`ILIKE`), range (`BETWEEN`) e
     full-text (`to_tsvector` + `plainto_tsquery`) sempre parametrizzati e validati da policy.
 - **Catalogo schema controllato** — introspezione policy-filtered di tabelle, viste,
@@ -190,7 +191,7 @@ Documentazione completa:
 - [x] Tool MCP (`select`, `search`, `aggregate`)
 - [x] Supporto multi-database (PostgreSQL, MySQL/MariaDB, SQLite)
 - [x] Enterprise layer iniziale (osservabilità, hardening, policy dinamica)
-- [ ] Stabilità API MCP e transport
+- [x] Stabilità API MCP (descriptor versionato; transport ancora successivo)
 - [ ] Versione 1.0 candidate
 
 ## 📄 Licenza
