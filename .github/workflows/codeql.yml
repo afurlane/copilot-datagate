@@ -10,10 +10,6 @@ name: Code Scanning
   pull_request:
     branches: [ master ]
     types: [opened, synchronize, reopened]
-    paths-ignore:
-      - '**/*.md'
-      - '.github/ISSUE_TEMPLATE/**'
-      - '.github/pull_request_template.md'
 
 permissions:
   actions: read

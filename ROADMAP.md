@@ -40,7 +40,7 @@
 - [x] Profilazione performance
 - [x] Hardening sicurezza
 - [x] Policy engine dinamico
-- [ ] Documentazione completa
+- [x] Documentazione completa
 - [ ] Versione 1.0 candidate
 
 ## 🔵 Versione 1.0 — Release

@@ -170,20 +170,23 @@ Se la variabile non è presente, il test viene saltato senza errore.
 Documentazione completa:
 - [Architecture.md](Architecture.md) — design principles e architettura a layer
 - [ROADMAP.md](ROADMAP.md) — roadmap dettagliata verso la 1.0
+- [docs/configuration.md](docs/configuration.md) — quick start, backend, policy e operazioni
 - [docs/mcp-tools.md](docs/mcp-tools.md) — contratti interni e regole dei tool MCP
 - [CONTRIBUTING.md](CONTRIBUTING.md) — regole di contribuzione, commit e branch
 - [SECURITY.md](SECURITY.md) — policy di sicurezza e segnalazione vulnerabilità
 
 ## 📍 Roadmap (sintesi)
 
-- [ ] Definizione del policy engine
+- [x] Definizione del policy engine
 - [x] Implementazione del query builder controllato (select parametrizzato)
-- [ ] Connessione read-only garantita
+- [x] Connessione read-only garantita
 - [x] Schema awareness automatica (catalogo interno PostgreSQL)
 - [x] Audit log foundation (JSONL via `AUDIT_LOG_PATH`)
-- [x] Tool MCP iniziali (`select`, `search`)
-- [ ] Supporto multi-database
-- [ ] Versione 0.1.0
+- [x] Tool MCP (`select`, `search`, `aggregate`)
+- [x] Supporto multi-database (PostgreSQL, MySQL/MariaDB, SQLite)
+- [x] Enterprise layer iniziale (osservabilità, hardening, policy dinamica)
+- [ ] Stabilità API MCP e transport
+- [ ] Versione 1.0 candidate
 
 ## 📄 Licenza
 
