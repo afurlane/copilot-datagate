@@ -75,6 +75,14 @@ Il layer metriche registra anche contatori e latenza lato server per il tool `se
 richieste totali/accettate/rifiutate, errori backend, p95 latenza in memoria e snapshot
 del pool PostgreSQL (`size`, `idle`).
 
+Il logging applicativo supporta due formati:
+
+- `LOG_FORMAT=pretty` (default)
+- `LOG_FORMAT=json` (strutturato, adatto a log collector)
+
+Il livello minimo dei log può essere configurato con `LOG_LEVEL`
+(`trace|debug|info|warn|error`) oppure tramite `RUST_LOG`.
+
 Se `DB_URL` è presente ha precedenza sui componenti. Il ruolo PostgreSQL deve avere
 solo permessi di lettura; inoltre ogni connessione imposta
 `default_transaction_read_only = on`.
