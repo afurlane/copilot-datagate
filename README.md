@@ -141,6 +141,10 @@ Il profilo attivo si seleziona con `profile = "dev"` e può definire la policy i
 forma legacy `[policy]`. Un profilo dichiarato ma inesistente attiva una policy
 deny-all, senza avviare operazioni sul database.
 
+Le release pubblicate includono binari per Linux x64/ARM64, Windows x64/ARM64 e
+macOS Intel/Apple Silicon, con archivi nominati per piattaforma e file
+`SHA256SUMS-*` per la verifica degli artifact.
+
 ## 🛡️ Perché DataGate?
 
 **Gli LLM non devono parlare direttamente ai database.** Serve un layer sicuro, prevedibile, controllato, auditabile, estensibile e multi-applicazione. DataGate è questo layer.

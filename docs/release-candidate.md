@@ -61,6 +61,10 @@ policy profiles, observability, and verification commands.
 The release version and changelog are managed by release-please. Do not edit
 `Cargo.toml` version or `CHANGELOG.md` manually as part of candidate work.
 
+Release artifacts are built for Linux x86_64/aarch64, Windows x86_64/aarch64,
+macOS x86_64, and macOS aarch64. Each archive is accompanied by a target-specific
+SHA-256 checksum file.
+
 ## Remaining 1.0 Release Work
 
 - stabilize and publish the MCP transport/API contract
