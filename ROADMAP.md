@@ -49,7 +49,7 @@
 - [x] Transport stdio come default operativo per avvio locale/VS Code
 - [x] Test end-to-end MCP (client rmcp + SQLite)
 - [x] Benchmark
-- [ ] Hardening finale
+- [x] Hardening finale
 - [ ] Transport MCP HTTP per scenari remoti
 - [ ] Selezione transport dual-mode (stdio + HTTP) con configurazione runtime
 - [ ] Pubblicazione MCP Registry e valutazione VS Code MCP Server Gallery

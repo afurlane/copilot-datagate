@@ -694,9 +694,32 @@ fn bind_value(value: Value) -> Result<BindValue, PublicError> {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::future::Future;
+    use std::pin::Pin;
 
     use super::*;
+    use crate::backend::{BackendError, SelectResult};
     use crate::config::{PolicyConfig, TableConfig};
+    use crate::metrics::PoolMetrics;
+
+    struct FailingBackend;
+
+    impl ReadOnlyBackend for FailingBackend {
+        fn execute_select<'a>(
+            &'a self,
+            _plan: &'a QueryPlan,
+        ) -> Pin<Box<dyn Future<Output = Result<SelectResult, BackendError>> + Send + 'a>> {
+            Box::pin(async {
+                Err(BackendError::Postgres(
+                    crate::backend::postgres::PostgresBackendError::InvalidConfiguration,
+                ))
+            })
+        }
+
+        fn pool_metrics(&self) -> PoolMetrics {
+            PoolMetrics { size: 0, idle: 0 }
+        }
+    }
 
     fn policy() -> Policy {
         let mut tables = HashMap::new();
@@ -776,6 +799,27 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(error, PublicError::policy_denied());
+    }
+
+    #[tokio::test]
+    async fn maps_backend_failure_to_retryable_sanitized_error() {
+        let request = SelectToolRequest {
+            request_id: "request-backend-down".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: vec![],
+            limit: Some(1),
+        };
+
+        let error = SelectTool::new(&policy(), None)
+            .execute(&FailingBackend, request)
+            .await
+            .unwrap_err();
+        assert_eq!(error, PublicError::backend_unavailable());
+        let serialized = serde_json::to_string(&error).expect("serializable error");
+        assert!(!serialized.contains("SELECT"));
+        assert!(!serialized.contains("users"));
+        assert!(!serialized.contains("PostgreSQL"));
     }
 
     #[tokio::test]
