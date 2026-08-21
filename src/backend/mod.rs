@@ -78,6 +78,9 @@ pub trait ReadOnlyBackend {
 }
 
 #[cfg(test)]
+mod integration_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
 

@@ -154,6 +154,17 @@ deny-all, senza avviare operazioni sul database.
 
 DataGate è in fase di progettazione. Il repository contiene la struttura iniziale, la documentazione e la roadmap tecnica.
 
+## 🧪 Test integrazione multi-backend
+
+I test di integrazione backend usano variabili ambiente opzionali:
+
+- `DATAGATE_TEST_POSTGRES_URL`
+- `DATAGATE_TEST_MYSQL_URL`
+
+Quando una variabile è presente, il relativo test verifica che il backend
+read-only esegua `SELECT` controllate e rifiuti statement di scrittura.
+Se la variabile non è presente, il test viene saltato senza errore.
+
 Documentazione completa:
 - [Architecture.md](Architecture.md) — design principles e architettura a layer
 - [ROADMAP.md](ROADMAP.md) — roadmap dettagliata verso la 1.0
