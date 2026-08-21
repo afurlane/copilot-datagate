@@ -31,7 +31,8 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 - **Filtri avanzati** — supporto a pattern (`LIKE`/`ILIKE`), range (`BETWEEN`) e
     full-text (`to_tsvector` + `plainto_tsquery`) sempre parametrizzati e validati da policy.
 - **Catalogo schema controllato** — introspezione policy-filtered di tabelle, viste,
-  indici, trigger, funzioni, procedure e sequenze; definizioni DDL solo quando sicure.
+    indici, vincoli (PK/FK/UNIQUE/CHECK/EXCLUSION), trigger, funzioni, procedure e sequenze;
+    definizioni DDL solo quando sicure.
 - **Rate limiting** — protezione contro loop del modello e query troppo pesanti.
 - **Limiti di output** — risposte sempre contenute, sicure e strutturate.
 - **Errori deterministici** — nessun leak di schema, nessun SQL esposto, nessun stack trace.

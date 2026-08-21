@@ -24,7 +24,7 @@
 - [x] Aggregazioni (count, sum, avg, min, max; senza GROUP BY nella prima versione)
 - [x] Filtri avanzati (range, pattern, full-text)
 - [x] Policy engine avanzato
-- [ ] Schema awareness completa
+- [x] Schema awareness completa
 - [x] MCP tool: `aggregate`
 - [ ] Supporto multi-schema
 
