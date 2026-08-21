@@ -8,6 +8,7 @@ mod config;
 mod error;
 #[allow(dead_code)]
 mod mcp;
+mod mcp_transport;
 mod metrics;
 mod policy;
 #[allow(dead_code)]
@@ -81,10 +82,19 @@ async fn main() -> anyhow::Result<()> {
         }
     };
     let policy_table_count = policy_config.tables.len();
-    let _policy = Policy::new(policy_config);
+    let policy = Policy::new(policy_config);
     tracing::info!(tables = policy_table_count, "policy engine ready");
 
     let backend_selector = BackendSelector::from_env()?;
+    if std::env::var("DATAGATE_MCP_STDIO").ok().as_deref() == Some("1") {
+        if backend_selector != BackendSelector::Sqlite {
+            anyhow::bail!("DATAGATE_MCP_STDIO=1 currently requires DATAGATE_BACKEND=sqlite");
+        }
+        let path = std::env::var("SQLITE_PATH")
+            .map_err(|_| anyhow::anyhow!("DATAGATE_MCP_STDIO=1 requires SQLITE_PATH"))?;
+        let backend = mcp_transport::connect_sqlite(path).await?;
+        return mcp_transport::serve_stdio(mcp_transport::McpServer::new(backend, policy)).await;
+    }
     initialize_backend(backend_selector).await?;
 
     Ok(())
