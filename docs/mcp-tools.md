@@ -29,6 +29,11 @@ All MCP tools must satisfy these invariants:
 - Optional rate limiting is evaluated before query execution.
 - Optional in-process metrics are recorded per request outcome.
 
+Current backend implementations behind the read-only abstraction:
+
+- PostgreSQL
+- SQLite
+
 ## Tool: select
 
 ### Request Contract

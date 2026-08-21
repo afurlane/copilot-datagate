@@ -7,6 +7,7 @@ use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgConnectOptions;
+use sqlx::sqlite::SqliteConnectOptions;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -143,6 +144,60 @@ impl std::fmt::Debug for PostgresConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("PostgresConfig")
+            .field("connect_options", &"[redacted]")
+            .field("max_connections", &self.max_connections)
+            .field("acquire_timeout_secs", &self.acquire_timeout_secs)
+            .finish()
+    }
+}
+
+/// SQLite pool configuration sourced only from environment variables.
+///
+/// This backend is intended for local/testing scenarios. Connections are opened
+/// read-only and query execution remains constrained by DataGate query plans.
+#[derive(Clone)]
+pub struct SqliteConfig {
+    pub connect_options: SqliteConnectOptions,
+    pub max_connections: u32,
+    pub acquire_timeout_secs: u64,
+}
+
+impl SqliteConfig {
+    pub fn from_env() -> Result<Option<Self>, ConfigError> {
+        let url = optional_env("SQLITE_URL")?;
+        let path = optional_env("SQLITE_PATH")?;
+        if url.is_none() && path.is_none() {
+            return Ok(None);
+        }
+
+        let connect_options = if let Some(url) = url {
+            SqliteConnectOptions::from_str(&url).map_err(|_| ConfigError::InvalidEnvironment {
+                variable: "SQLITE_URL",
+            })?
+        } else {
+            SqliteConnectOptions::new().filename(path.expect("checked above"))
+        }
+        .read_only(true)
+        .create_if_missing(false);
+
+        Ok(Some(Self {
+            connect_options,
+            max_connections: env_u32_or_default(
+                "SQLITE_MAX_CONNECTIONS",
+                default_max_connections(),
+            )?,
+            acquire_timeout_secs: env_u64_or_default(
+                "SQLITE_ACQUIRE_TIMEOUT_SECS",
+                default_acquire_timeout_secs(),
+            )?,
+        }))
+    }
+}
+
+impl std::fmt::Debug for SqliteConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("SqliteConfig")
             .field("connect_options", &"[redacted]")
             .field("max_connections", &self.max_connections)
             .field("acquire_timeout_secs", &self.acquire_timeout_secs)

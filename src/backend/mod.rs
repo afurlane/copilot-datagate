@@ -4,17 +4,59 @@ use std::future::Future;
 use std::pin::Pin;
 
 use serde_json::Value;
+use sqlx::{Column, Row};
 use thiserror::Error;
 
 use crate::metrics::PoolMetrics;
 use crate::query::QueryPlan;
 
+macro_rules! bind_query_values {
+    ($query:expr, $binds:expr) => {{
+        let mut query = $query;
+        for bind in $binds {
+            query = match bind {
+                crate::query::BindValue::Text(value) => query.bind(value),
+                crate::query::BindValue::Integer(value) => query.bind(value),
+                crate::query::BindValue::Decimal(value) => query.bind(value),
+                crate::query::BindValue::Boolean(value) => query.bind(value),
+            };
+        }
+        query
+    }};
+}
+
+pub(crate) use bind_query_values;
+
+pub(crate) fn columns_from_rows<R>(rows: &[R]) -> Vec<String>
+where
+    R: Row,
+{
+    rows.first()
+        .map(|row| {
+            row.columns()
+                .iter()
+                .map(|column| column.name().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn json_or_null<T>(value: Option<T>) -> Value
+where
+    T: Into<Value>,
+{
+    value.map_or(Value::Null, Into::into)
+}
+
 pub mod postgres;
+pub mod sqlite;
 
 #[derive(Debug, Error)]
 pub enum BackendError {
     #[error("PostgreSQL backend failed")]
     Postgres(#[from] postgres::PostgresBackendError),
+    #[error("SQLite backend failed")]
+    Sqlite(#[from] sqlite::SqliteBackendError),
 }
 
 #[derive(Debug, Clone, PartialEq)]
