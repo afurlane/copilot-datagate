@@ -255,6 +255,48 @@ mod tests {
     }
 
     #[test]
+    fn reload_from_file_activates_effective_profile_policy() {
+        let path = std::env::temp_dir().join(format!(
+            "datagate-policy-{}-{}.toml",
+            std::process::id(),
+            "valid"
+        ));
+        std::fs::write(
+            &path,
+            r#"
+                profile = "restricted"
+                [profiles.restricted.policy.tables.users]
+                columns = ["id"]
+            "#,
+        )
+        .expect("write policy fixture");
+
+        let policy = policy_with_users_id_email();
+        policy
+            .reload_from_file(&path)
+            .expect("reload policy fixture");
+        std::fs::remove_file(path).expect("remove policy fixture");
+
+        assert!(policy.check_column("users", "id").is_ok());
+        assert_eq!(
+            policy.check_column("users", "email").unwrap_err(),
+            PolicyError::ColumnNotAllowed {
+                table: "users".to_string(),
+                column: "email".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn failed_file_reload_keeps_current_policy_active() {
+        let policy = policy_with_users_id_email();
+        let error = policy.reload_from_file("/nonexistent/path/datagate.toml");
+
+        assert!(matches!(error, Err(ConfigError::Read { .. })));
+        assert!(policy.check_column("users", "email").is_ok());
+    }
+
+    #[test]
     fn denies_table_not_in_allowlist() {
         let err = policy_with_users_id_email()
             .check_table("secrets")
