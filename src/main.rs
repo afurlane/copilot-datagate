@@ -71,6 +71,7 @@ async fn main() -> anyhow::Result<()> {
             tables = schema.tables.len(),
             views = schema.views.len(),
             indexes = schema.indexes.len(),
+            constraints = schema.constraints.len(),
             triggers = schema.triggers.len(),
             routines = schema.routines.len(),
             sequences = schema.sequences.len(),

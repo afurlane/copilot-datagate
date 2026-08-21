@@ -15,6 +15,7 @@ pub struct SchemaCatalog {
     pub tables: Vec<TableInfo>,
     pub views: Vec<ViewInfo>,
     pub indexes: Vec<IndexInfo>,
+    pub constraints: Vec<ConstraintInfo>,
     pub triggers: Vec<TriggerInfo>,
     pub routines: Vec<RoutineInfo>,
     pub sequences: Vec<SequenceInfo>,
@@ -50,6 +51,24 @@ pub struct IndexInfo {
     pub relation: String,
     pub is_unique: bool,
     pub is_primary: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConstraintInfo {
+    pub schema: String,
+    pub name: String,
+    pub relation: String,
+    pub constraint_type: String,
+    pub definition: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, FromRow)]
+struct ConstraintRow {
+    pub schema: String,
+    pub name: String,
+    pub relation: String,
+    pub constraint_type_code: String,
+    pub definition: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, FromRow)]
@@ -132,6 +151,35 @@ impl SchemaCatalog {
         .await
         .map_err(SchemaLoaderError::Query)?;
 
+        let constraint_rows = sqlx::query_as::<_, ConstraintRow>(
+            r#"
+            SELECT n.nspname AS schema,
+                   c.conname AS name,
+                   t.relname AS relation,
+                   c.contype::text AS constraint_type_code,
+                   pg_get_constraintdef(c.oid, true) AS definition
+            FROM pg_catalog.pg_constraint c
+            JOIN pg_catalog.pg_class t ON t.oid = c.conrelid
+            JOIN pg_catalog.pg_namespace n ON n.oid = t.relnamespace
+            WHERE n.nspname NOT IN ('pg_catalog', 'information_schema')
+            ORDER BY n.nspname, t.relname, c.conname
+            "#,
+        )
+        .fetch_all(pool)
+        .await
+        .map_err(SchemaLoaderError::Query)?;
+
+        let constraints = constraint_rows
+            .into_iter()
+            .map(|row| ConstraintInfo {
+                schema: row.schema,
+                name: row.name,
+                relation: row.relation,
+                constraint_type: normalize_constraint_type(&row.constraint_type_code),
+                definition: row.definition,
+            })
+            .collect();
+
         let triggers = sqlx::query_as::<_, TriggerInfo>(
             r#"
             SELECT trigger_schema AS schema, trigger_name AS name, event_object_table AS relation,
@@ -188,10 +236,22 @@ impl SchemaCatalog {
                 })
                 .collect(),
             indexes,
+            constraints,
             triggers,
             routines,
             sequences,
         })
+    }
+}
+
+fn normalize_constraint_type(code: &str) -> String {
+    match code {
+        "p" => "PRIMARY KEY".to_string(),
+        "f" => "FOREIGN KEY".to_string(),
+        "u" => "UNIQUE".to_string(),
+        "c" => "CHECK".to_string(),
+        "x" => "EXCLUSION".to_string(),
+        _ => code.to_uppercase(),
     }
 }
 
@@ -316,5 +376,19 @@ mod tests {
         let result = attach_columns(relations, &columns);
         assert_eq!(result[0].columns[0].name, "id");
         assert_eq!(result[1].columns[0].name, "action");
+    }
+
+    #[test]
+    fn normalizes_well_known_constraint_type_codes() {
+        assert_eq!(normalize_constraint_type("p"), "PRIMARY KEY");
+        assert_eq!(normalize_constraint_type("f"), "FOREIGN KEY");
+        assert_eq!(normalize_constraint_type("u"), "UNIQUE");
+        assert_eq!(normalize_constraint_type("c"), "CHECK");
+        assert_eq!(normalize_constraint_type("x"), "EXCLUSION");
+    }
+
+    #[test]
+    fn preserves_unknown_constraint_type_codes_as_uppercase() {
+        assert_eq!(normalize_constraint_type("t"), "T");
     }
 }
