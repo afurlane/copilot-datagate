@@ -1,9 +1,11 @@
 //! Policy engine: tables/columns allow-lists, row limits.
 //! Evaluated before any query is built — nothing downstream may bypass it.
 
+use std::sync::{Arc, RwLock};
+
 use thiserror::Error;
 
-use crate::config::{FilterOperatorConfig, PolicyConfig};
+use crate::config::{Config, ConfigError, FilterOperatorConfig, PolicyConfig};
 
 // Not yet raised by production code paths until the query builder calls Policy (v0.1).
 #[allow(dead_code)]
@@ -32,11 +34,15 @@ pub enum PolicyError {
     OutputLimitExceeded { requested: u32, max: u32 },
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Policy {
-    // Consumed by check_table/check_column/resolve_row_limit below (v0.1 in progress).
-    #[allow(dead_code)]
-    config: PolicyConfig,
+    config: Arc<RwLock<PolicyConfig>>,
+}
+
+impl Default for Policy {
+    fn default() -> Self {
+        Self::new(PolicyConfig::default())
+    }
 }
 
 // check_table/check_column/resolve_row_limit are only exercised by tests until the
@@ -44,7 +50,25 @@ pub struct Policy {
 #[allow(dead_code)]
 impl Policy {
     pub fn new(config: PolicyConfig) -> Self {
-        Self { config }
+        Self {
+            config: Arc::new(RwLock::new(config)),
+        }
+    }
+
+    /// Atomically replaces the active policy for subsequent requests.
+    pub fn reload(&self, config: PolicyConfig) {
+        let mut current = match self.config.write() {
+            Ok(current) => current,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        *current = config;
+    }
+
+    /// Loads and activates a policy file without replacing the shared Policy handle.
+    pub fn reload_from_file(&self, path: impl AsRef<std::path::Path>) -> Result<(), ConfigError> {
+        let config = Config::load(path)?;
+        self.reload(config.effective_policy()?);
+        Ok(())
     }
 
     /// Rejects any table not explicitly present in the allow-list.
@@ -55,7 +79,11 @@ impl Policy {
     /// Rejects any column not explicitly allow-listed for the given table.
     pub fn check_column(&self, table: &str, column: &str) -> Result<(), PolicyError> {
         let key = self.resolve_table_key(table)?;
-        let allowed = &self.config.tables[&key].columns;
+        let config = match self.config.read() {
+            Ok(config) => config,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let allowed = &config.tables[&key].columns;
         if allowed.iter().any(|c| c == column) {
             Ok(())
         } else {
@@ -76,7 +104,11 @@ impl Policy {
         operator: FilterOperatorConfig,
     ) -> Result<(), PolicyError> {
         let key = self.resolve_table_key(table)?;
-        let table_config = &self.config.tables[&key];
+        let config = match self.config.read() {
+            Ok(config) => config,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let table_config = &config.tables[&key];
         let allowed_columns = &table_config.columns;
         if !allowed_columns.iter().any(|candidate| candidate == column) {
             return Err(PolicyError::ColumnNotAllowed {
@@ -97,7 +129,11 @@ impl Policy {
     }
 
     fn resolve_table_key(&self, table: &str) -> Result<String, PolicyError> {
-        if self.config.tables.contains_key(table) {
+        let config = match self.config.read() {
+            Ok(config) => config,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if config.tables.contains_key(table) {
             return Ok(table.to_string());
         }
 
@@ -106,8 +142,7 @@ impl Policy {
         }
 
         let suffix = format!(".{table}");
-        let mut candidates = self
-            .config
+        let mut candidates = config
             .tables
             .keys()
             .filter(|key| key.ends_with(&suffix))
@@ -130,11 +165,15 @@ impl Policy {
     /// Resolves the effective row limit for a request, applying the default when unset
     /// and rejecting anything above the configured maximum.
     pub fn resolve_row_limit(&self, requested: Option<u32>) -> Result<u32, PolicyError> {
-        let limit = requested.unwrap_or(self.config.default_row_limit);
-        if limit > self.config.max_row_limit {
+        let config = match self.config.read() {
+            Ok(config) => config,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        let limit = requested.unwrap_or(config.default_row_limit);
+        if limit > config.max_row_limit {
             Err(PolicyError::RowLimitExceeded {
                 requested: limit,
-                max: self.config.max_row_limit,
+                max: config.max_row_limit,
             })
         } else {
             Ok(limit)
@@ -142,10 +181,14 @@ impl Policy {
     }
 
     pub fn check_complexity(&self, complexity: u32) -> Result<(), PolicyError> {
-        if complexity > self.config.max_query_complexity {
+        let config = match self.config.read() {
+            Ok(config) => config,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if complexity > config.max_query_complexity {
             Err(PolicyError::ComplexityExceeded {
                 requested: complexity,
-                max: self.config.max_query_complexity,
+                max: config.max_query_complexity,
             })
         } else {
             Ok(())
@@ -153,10 +196,14 @@ impl Policy {
     }
 
     pub fn check_output_bytes(&self, output_bytes: u32) -> Result<(), PolicyError> {
-        if output_bytes > self.config.max_output_bytes {
+        let config = match self.config.read() {
+            Ok(config) => config,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if output_bytes > config.max_output_bytes {
             Err(PolicyError::OutputLimitExceeded {
                 requested: output_bytes,
-                max: self.config.max_output_bytes,
+                max: config.max_output_bytes,
             })
         } else {
             Ok(())
@@ -192,6 +239,61 @@ mod tests {
     #[test]
     fn allows_table_in_allowlist() {
         assert!(policy_with_users_id_email().check_table("users").is_ok());
+    }
+
+    #[test]
+    fn reload_updates_existing_policy_handle() {
+        let policy = policy_with_users_id_email();
+        assert!(policy.check_table("users").is_ok());
+
+        policy.reload(PolicyConfig::default());
+
+        assert_eq!(
+            policy.check_table("users").unwrap_err(),
+            PolicyError::TableNotAllowed("users".to_string())
+        );
+    }
+
+    #[test]
+    fn reload_from_file_activates_effective_profile_policy() {
+        let path = std::env::temp_dir().join(format!(
+            "datagate-policy-{}-{}.toml",
+            std::process::id(),
+            "valid"
+        ));
+        std::fs::write(
+            &path,
+            r#"
+                profile = "restricted"
+                [profiles.restricted.policy.tables.users]
+                columns = ["id"]
+            "#,
+        )
+        .expect("write policy fixture");
+
+        let policy = policy_with_users_id_email();
+        policy
+            .reload_from_file(&path)
+            .expect("reload policy fixture");
+        std::fs::remove_file(path).expect("remove policy fixture");
+
+        assert!(policy.check_column("users", "id").is_ok());
+        assert_eq!(
+            policy.check_column("users", "email").unwrap_err(),
+            PolicyError::ColumnNotAllowed {
+                table: "users".to_string(),
+                column: "email".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn failed_file_reload_keeps_current_policy_active() {
+        let policy = policy_with_users_id_email();
+        let error = policy.reload_from_file("/nonexistent/path/datagate.toml");
+
+        assert!(matches!(error, Err(ConfigError::Read { .. })));
+        assert!(policy.check_column("users", "email").is_ok());
     }
 
     #[test]

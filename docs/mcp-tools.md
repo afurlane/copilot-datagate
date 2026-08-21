@@ -40,6 +40,11 @@ Hardening input envelope (server-side):
 
 Requests outside these bounds are rejected with sanitized `invalid_request`.
 
+The active policy is held behind a shared reloadable handle. Calling
+`Policy::reload` or `Policy::reload_from_file` atomically replaces the policy
+used by subsequent tool requests; existing tool instances do not need to be
+recreated. A failed file load leaves the currently active policy unchanged.
+
 Current backend implementations behind the read-only abstraction:
 
 - PostgreSQL

@@ -41,6 +41,7 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 - **Errori strutturati** — envelope stabile con codice, messaggio generico e indicazione `retryable`.
 - **Configurazione esterna** — file TOML per policy, limiti e profili nominati (dev/staging/prod).
 - **Hardening input MCP** — validazione `request_id`, limiti su payload testuali e cardinalità per ridurre superfici DoS/input abuse.
+- **Policy dinamica** — la policy attiva può essere sostituita atomicamente, anche ricaricandola da TOML, senza ricreare i tool MCP.
 
 DataGate non espone una funzione MCP di query SQL libera: l'agente invia esclusivamente
 parametri strutturati, validati contro schema e policy prima della costruzione della
