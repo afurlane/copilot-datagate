@@ -239,7 +239,8 @@ impl Default for PolicyConfig {
     }
 }
 
-/// Per-table allow-list. An empty `columns` list denies every column on that table.
+/// Per-table allow-list. Keys can be unqualified (`users`) or schema-qualified
+/// (`audit.users`). An empty `columns` list denies every column on that table.
 #[allow(dead_code)]
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct TableConfig {
@@ -342,6 +343,21 @@ mod tests {
                 .unwrap_or_default(),
             vec![FilterOperatorConfig::Equals, FilterOperatorConfig::Between]
         );
+    }
+
+    #[test]
+    fn parses_schema_qualified_table_policy_key() {
+        let raw = r#"
+            [policy.tables."audit.users"]
+            columns = ["id", "email"]
+        "#;
+        let config: Config = toml::from_str(raw).expect("valid toml");
+        let users = config
+            .policy
+            .tables
+            .get("audit.users")
+            .expect("audit.users table");
+        assert_eq!(users.columns, vec!["id", "email"]);
     }
 
     #[test]

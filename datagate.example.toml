@@ -37,3 +37,13 @@ id = ["equals", "between"]
 user_id = ["equals", "between"]
 total = ["equals", "greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal", "between"]
 status = ["equals", "not_equals", "like", "ilike", "full_text"]
+
+# Multi-schema: use a quoted key for schema-qualified table names.
+[profiles.dev.policy.tables."audit.users"]
+columns = ["id", "email", "action", "created_at"]
+
+[profiles.dev.policy.tables."audit.users".filter_operators]
+id = ["equals", "between"]
+email = ["equals", "ilike"]
+action = ["equals", "not_equals", "full_text"]
+created_at = ["equals", "greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal", "between"]

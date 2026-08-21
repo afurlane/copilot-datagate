@@ -36,7 +36,7 @@ All MCP tools must satisfy these invariants:
 `SelectToolRequest`
 
 - `request_id: String`
-- `table: String`
+- `table: String` (supports `table` and `schema.table`)
 - `columns: Vec<String>`
 - `filters: Vec<SelectToolFilter>` (default empty)
 - `limit: Option<u32>`
@@ -72,6 +72,8 @@ Policy constraints:
 - `filter_operators` is optional per table/column in configuration.
 - if a column declares `filter_operators`, only those operators are accepted.
 - if not declared, all operators remain allowed (backward compatible behavior).
+- policy table keys can be unqualified (`users`) or schema-qualified (`audit.users`).
+- an unqualified request that matches multiple schema-qualified policy keys is rejected as ambiguous.
 
 ### Execution Flow
 
@@ -97,7 +99,7 @@ Policy constraints:
 `SearchToolRequest`
 
 - `request_id: String`
-- `table: String`
+- `table: String` (supports `table` and `schema.table`)
 - `columns: Vec<String>`
 - `searchable_columns: Vec<String>`
 - `text: String`
@@ -127,7 +129,7 @@ Policy constraints:
 `AggregateToolRequest`
 
 - `request_id: String`
-- `table: String`
+- `table: String` (supports `table` and `schema.table`)
 - `operations: Vec<AggregateToolOperation>`
 - `filters: Vec<SelectToolFilter>` (default empty)
 
