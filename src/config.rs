@@ -5,7 +5,7 @@ use std::env;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgConnectOptions;
 use thiserror::Error;
 
@@ -245,6 +245,24 @@ impl Default for PolicyConfig {
 pub struct TableConfig {
     #[serde(default)]
     pub columns: Vec<String>,
+    #[serde(default)]
+    pub filter_operators: HashMap<String, Vec<FilterOperatorConfig>>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FilterOperatorConfig {
+    Equals,
+    NotEquals,
+    LessThan,
+    LessThanOrEqual,
+    GreaterThan,
+    GreaterThanOrEqual,
+    Like,
+    #[serde(rename = "ilike")]
+    ILike,
+    Between,
+    FullText,
 }
 
 fn default_row_limit() -> u32 {
@@ -288,6 +306,42 @@ mod tests {
         assert!(config.profiles.is_empty());
         let users = config.policy.tables.get("users").expect("users table");
         assert_eq!(users.columns, vec!["id", "email"]);
+        assert!(users.filter_operators.is_empty());
+    }
+
+    #[test]
+    fn parses_filter_operators_per_column() {
+        let raw = r#"
+            [policy.tables.users]
+            columns = ["id", "email"]
+
+            [policy.tables.users.filter_operators]
+            email = ["like", "ilike", "full_text"]
+            id = ["equals", "between"]
+        "#;
+        let config: Config = toml::from_str(raw).expect("valid toml");
+        let users = config.policy.tables.get("users").expect("users table");
+
+        assert_eq!(
+            users
+                .filter_operators
+                .get("email")
+                .cloned()
+                .unwrap_or_default(),
+            vec![
+                FilterOperatorConfig::Like,
+                FilterOperatorConfig::ILike,
+                FilterOperatorConfig::FullText,
+            ]
+        );
+        assert_eq!(
+            users
+                .filter_operators
+                .get("id")
+                .cloned()
+                .unwrap_or_default(),
+            vec![FilterOperatorConfig::Equals, FilterOperatorConfig::Between]
+        );
     }
 
     #[test]

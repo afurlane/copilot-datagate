@@ -592,6 +592,7 @@ mod tests {
             "users".into(),
             TableConfig {
                 columns: vec!["id".into(), "email".into(), "active".into()],
+                filter_operators: HashMap::new(),
             },
         );
         Policy::new(PolicyConfig {
@@ -694,6 +695,7 @@ mod tests {
             "users".into(),
             TableConfig {
                 columns: vec!["id".into(), "email".into()],
+                filter_operators: HashMap::new(),
             },
         );
         let strict_policy = Policy::new(PolicyConfig {
@@ -836,6 +838,7 @@ mod tests {
             "users".into(),
             TableConfig {
                 columns: vec!["id".into(), "email".into()],
+                filter_operators: HashMap::new(),
             },
         );
         let strict_policy = Policy::new(PolicyConfig {

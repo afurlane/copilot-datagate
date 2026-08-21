@@ -67,6 +67,12 @@ Advanced filter semantics:
 - `like`/`ilike`: require text bind values.
 - `full_text`: builds `to_tsvector('simple', coalesce(column::text, '')) @@ plainto_tsquery('simple', $n)` with a single text bind.
 
+Policy constraints:
+
+- `filter_operators` is optional per table/column in configuration.
+- if a column declares `filter_operators`, only those operators are accepted.
+- if not declared, all operators remain allowed (backward compatible behavior).
+
 ### Execution Flow
 
 1. `prepare` validates rate limit (if configured).

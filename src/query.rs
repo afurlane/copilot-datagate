@@ -2,6 +2,7 @@
 
 use thiserror::Error;
 
+use crate::config::FilterOperatorConfig;
 use crate::policy::{Policy, PolicyError};
 
 #[derive(Debug, Error, PartialEq)]
@@ -59,6 +60,23 @@ impl FilterOperator {
             Self::ILike => "ILIKE",
             Self::Between => "BETWEEN",
             Self::FullText => "@@",
+        }
+    }
+}
+
+impl From<FilterOperator> for FilterOperatorConfig {
+    fn from(operator: FilterOperator) -> Self {
+        match operator {
+            FilterOperator::Equals => Self::Equals,
+            FilterOperator::NotEquals => Self::NotEquals,
+            FilterOperator::LessThan => Self::LessThan,
+            FilterOperator::LessThanOrEqual => Self::LessThanOrEqual,
+            FilterOperator::GreaterThan => Self::GreaterThan,
+            FilterOperator::GreaterThanOrEqual => Self::GreaterThanOrEqual,
+            FilterOperator::Like => Self::Like,
+            FilterOperator::ILike => Self::ILike,
+            FilterOperator::Between => Self::Between,
+            FilterOperator::FullText => Self::FullText,
         }
     }
 }
@@ -267,6 +285,7 @@ fn build_filters(
     let mut bind_index = 1;
     for filter in filters {
         policy.check_column(table, &filter.column)?;
+        policy.check_filter_operator(table, &filter.column, filter.operator.into())?;
         let quoted_column = quote_identifier(&filter.column)?;
         match filter.operator {
             FilterOperator::Between => {
@@ -373,6 +392,7 @@ mod tests {
             "users".to_string(),
             TableConfig {
                 columns: vec!["id".into(), "email".into(), "active".into()],
+                filter_operators: HashMap::new(),
             },
         );
         Policy::new(PolicyConfig {
@@ -481,6 +501,7 @@ mod tests {
             "users".to_string(),
             TableConfig {
                 columns: vec!["id".into(), "email".into(), "active".into()],
+                filter_operators: HashMap::new(),
             },
         );
         let policy = Policy::new(PolicyConfig {

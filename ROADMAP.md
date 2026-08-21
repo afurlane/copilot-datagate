@@ -23,7 +23,7 @@
 ## 🔵 Versione 0.3 — Advanced Query Layer
 - [x] Aggregazioni (count, sum, avg, min, max; senza GROUP BY nella prima versione)
 - [x] Filtri avanzati (range, pattern, full-text)
-- [ ] Policy engine avanzato
+- [x] Policy engine avanzato
 - [ ] Schema awareness completa
 - [x] MCP tool: `aggregate`
 - [ ] Supporto multi-schema
