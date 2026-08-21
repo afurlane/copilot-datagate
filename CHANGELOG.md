@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/afurlane/copilot-datagate/compare/copilot-datagate-v0.2.0...copilot-datagate-v0.2.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* **release:** stabilize multiarch artifact packaging ([#38](https://github.com/afurlane/copilot-datagate/issues/38)) ([660e128](https://github.com/afurlane/copilot-datagate/commit/660e128f46bd240b2de8519793a64e4bc08f1cda))
+
 ## [0.2.0](https://github.com/afurlane/copilot-datagate/compare/copilot-datagate-v0.1.0...copilot-datagate-v0.2.0) (2026-08-21)
 
 
