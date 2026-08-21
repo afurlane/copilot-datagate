@@ -19,6 +19,17 @@ pub struct MetricsSnapshot {
     pub pool: Option<PoolMetrics>,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct PerformanceProfile {
+    pub samples: usize,
+    pub min_latency_ms: Option<u64>,
+    pub avg_latency_ms: Option<f64>,
+    pub p50_latency_ms: Option<u64>,
+    pub p95_latency_ms: Option<u64>,
+    pub p99_latency_ms: Option<u64>,
+    pub max_latency_ms: Option<u64>,
+}
+
 #[derive(Debug, Default)]
 pub struct MetricsRegistry {
     requests_total: AtomicU64,
@@ -74,6 +85,11 @@ impl MetricsRegistry {
         }
     }
 
+    pub fn performance_profile(&self) -> PerformanceProfile {
+        let latencies = self.latencies_ms.lock().ok().map(|guard| guard.clone());
+        profile_from_latencies(latencies.unwrap_or_default())
+    }
+
     fn record_latency(&self, latency_ms: u64) {
         if let Ok(mut latencies) = self.latencies_ms.lock() {
             latencies.push(latency_ms);
@@ -89,6 +105,40 @@ fn percentile_95(latencies: &[u64]) -> Option<u64> {
     sorted.sort_unstable();
     let index = ((sorted.len() * 95).saturating_sub(1)) / 100;
     sorted.get(index).copied()
+}
+
+fn percentile(latencies: &[u64], percentile: usize) -> Option<u64> {
+    if latencies.is_empty() {
+        return None;
+    }
+    let mut sorted = latencies.to_vec();
+    sorted.sort_unstable();
+    let index = ((sorted.len() * percentile).saturating_sub(1)) / 100;
+    sorted.get(index).copied()
+}
+
+fn profile_from_latencies(latencies: Vec<u64>) -> PerformanceProfile {
+    let samples = latencies.len();
+    let min_latency_ms = latencies.iter().min().copied();
+    let max_latency_ms = latencies.iter().max().copied();
+    let avg_latency_ms = if samples > 0 {
+        let sum = latencies.iter().fold(0_u128, |accumulator, latency| {
+            accumulator + u128::from(*latency)
+        });
+        Some(sum as f64 / samples as f64)
+    } else {
+        None
+    };
+
+    PerformanceProfile {
+        samples,
+        min_latency_ms,
+        avg_latency_ms,
+        p50_latency_ms: percentile(&latencies, 50),
+        p95_latency_ms: percentile(&latencies, 95),
+        p99_latency_ms: percentile(&latencies, 99),
+        max_latency_ms,
+    }
 }
 
 #[cfg(test)]
@@ -127,5 +177,34 @@ mod tests {
         let metrics = MetricsRegistry::new();
         let snapshot = metrics.snapshot();
         assert_eq!(snapshot.p95_latency_ms, None);
+    }
+
+    #[test]
+    fn computes_performance_profile_from_latencies() {
+        let metrics = MetricsRegistry::new();
+        for latency in [10, 20, 30, 40, 50, 60, 70, 80, 90, 100] {
+            metrics.record_accepted(latency);
+        }
+        let profile = metrics.performance_profile();
+        assert_eq!(profile.samples, 10);
+        assert_eq!(profile.min_latency_ms, Some(10));
+        assert_eq!(profile.p50_latency_ms, Some(50));
+        assert_eq!(profile.p95_latency_ms, Some(100));
+        assert_eq!(profile.p99_latency_ms, Some(100));
+        assert_eq!(profile.max_latency_ms, Some(100));
+        assert_eq!(profile.avg_latency_ms, Some(55.0));
+    }
+
+    #[test]
+    fn returns_empty_performance_profile_without_samples() {
+        let metrics = MetricsRegistry::new();
+        let profile = metrics.performance_profile();
+        assert_eq!(profile.samples, 0);
+        assert_eq!(profile.min_latency_ms, None);
+        assert_eq!(profile.avg_latency_ms, None);
+        assert_eq!(profile.p50_latency_ms, None);
+        assert_eq!(profile.p95_latency_ms, None);
+        assert_eq!(profile.p99_latency_ms, None);
+        assert_eq!(profile.max_latency_ms, None);
     }
 }

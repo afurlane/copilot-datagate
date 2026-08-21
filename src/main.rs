@@ -42,6 +42,15 @@ async fn main() -> anyhow::Result<()> {
         requests_total = metrics_snapshot.requests_total,
         "metrics registry initialized"
     );
+    let performance_profile = init_performance_profile();
+    tracing::debug!(
+        samples = performance_profile.samples,
+        p50_latency_ms = ?performance_profile.p50_latency_ms,
+        p95_latency_ms = ?performance_profile.p95_latency_ms,
+        p99_latency_ms = ?performance_profile.p99_latency_ms,
+        avg_latency_ms = ?performance_profile.avg_latency_ms,
+        "performance profile initialized"
+    );
 
     let _rate_limiter = build_rate_limiter(
         std::env::var("RATE_LIMIT_REQUESTS").ok().as_deref(),
@@ -94,6 +103,10 @@ async fn main() -> anyhow::Result<()> {
 
 fn init_metrics_snapshot() -> metrics::MetricsSnapshot {
     MetricsRegistry::new().snapshot()
+}
+
+fn init_performance_profile() -> metrics::PerformanceProfile {
+    MetricsRegistry::new().performance_profile()
 }
 
 fn init_logging(format: Option<&str>, level: Option<&str>) -> anyhow::Result<()> {
@@ -182,6 +195,18 @@ mod tests {
         assert_eq!(snapshot.backend_errors, 0);
         assert_eq!(snapshot.p95_latency_ms, None);
         assert_eq!(snapshot.pool, None);
+    }
+
+    #[test]
+    fn initializes_empty_performance_profile() {
+        let profile = init_performance_profile();
+        assert_eq!(profile.samples, 0);
+        assert_eq!(profile.min_latency_ms, None);
+        assert_eq!(profile.avg_latency_ms, None);
+        assert_eq!(profile.p50_latency_ms, None);
+        assert_eq!(profile.p95_latency_ms, None);
+        assert_eq!(profile.p99_latency_ms, None);
+        assert_eq!(profile.max_latency_ms, None);
     }
 
     #[test]
