@@ -11,6 +11,11 @@ Implemented tools:
 - `search`
 - `aggregate`
 
+The stable API descriptor is exposed by `McpApiDescriptor::current()` and
+currently reports API version `1` with the tools `select`, `search`, and
+`aggregate`, in that order. Clients should use the descriptor rather than
+assuming that new tools are added without a version change.
+
 The first `aggregate` version returns one aggregate row and does not support
 `GROUP BY`; grouped aggregation is reserved for the advanced query layer.
 
