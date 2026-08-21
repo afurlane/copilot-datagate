@@ -10,6 +10,8 @@ profile = "dev"
 # [policy] section remains supported when no [profiles] section is configured.
 
 # PostgreSQL credentials are read only from the environment, never from this file.
+# Backend selection is also environment-driven via DATAGATE_BACKEND
+# (auto|postgres|mysql|mariadb|sqlite). Default is auto.
 # Compact form: DB_URL, optionally with DB_OPTIONS as key=value&key=value.
 # Component form: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.
 # Pool settings: DB_MAX_CONNECTIONS and DB_ACQUIRE_TIMEOUT_SECS.

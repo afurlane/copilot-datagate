@@ -25,6 +25,33 @@ pub enum ConfigError {
     UnknownProfile(String),
     #[error("invalid or missing database environment variable `{variable}`")]
     InvalidEnvironment { variable: &'static str },
+    #[error("invalid backend selector `{value}` in environment variable `DATAGATE_BACKEND`")]
+    InvalidBackendSelector { value: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendSelector {
+    Auto,
+    Postgres,
+    MySql,
+    Sqlite,
+}
+
+impl BackendSelector {
+    pub fn from_env() -> Result<Self, ConfigError> {
+        match optional_env("DATAGATE_BACKEND")?
+            .map(|value| value.trim().to_ascii_lowercase())
+            .as_deref()
+        {
+            None | Some("auto") => Ok(Self::Auto),
+            Some("postgres") => Ok(Self::Postgres),
+            Some("mysql") | Some("mariadb") => Ok(Self::MySql),
+            Some("sqlite") => Ok(Self::Sqlite),
+            Some(value) => Err(ConfigError::InvalidBackendSelector {
+                value: value.to_string(),
+            }),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize, Default, Clone)]
@@ -428,7 +455,54 @@ mod tests {
     use super::*;
     use std::sync::Mutex;
 
+    static BACKEND_SELECTOR_ENV_LOCK: Mutex<()> = Mutex::new(());
     static MYSQL_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn backend_selector_defaults_to_auto_when_unset() {
+        with_backend_selector_env(None, || {
+            assert_eq!(
+                BackendSelector::from_env().expect("selector parsing"),
+                BackendSelector::Auto
+            );
+        });
+    }
+
+    #[test]
+    fn backend_selector_accepts_supported_values_case_insensitively() {
+        with_backend_selector_env(Some("postgres"), || {
+            assert_eq!(
+                BackendSelector::from_env().unwrap(),
+                BackendSelector::Postgres
+            );
+        });
+        with_backend_selector_env(Some("MYSQL"), || {
+            assert_eq!(BackendSelector::from_env().unwrap(), BackendSelector::MySql);
+        });
+        with_backend_selector_env(Some("mariadb"), || {
+            assert_eq!(BackendSelector::from_env().unwrap(), BackendSelector::MySql);
+        });
+        with_backend_selector_env(Some("sqlite"), || {
+            assert_eq!(
+                BackendSelector::from_env().unwrap(),
+                BackendSelector::Sqlite
+            );
+        });
+        with_backend_selector_env(Some("auto"), || {
+            assert_eq!(BackendSelector::from_env().unwrap(), BackendSelector::Auto);
+        });
+    }
+
+    #[test]
+    fn backend_selector_rejects_unknown_value() {
+        with_backend_selector_env(Some("oracle"), || {
+            let err = BackendSelector::from_env().expect_err("unknown selector must fail");
+            assert!(matches!(
+                err,
+                ConfigError::InvalidBackendSelector { value } if value == "oracle"
+            ));
+        });
+    }
 
     #[test]
     fn parses_policy_from_toml() {
@@ -710,6 +784,23 @@ mod tests {
                 Some(value) => std::env::set_var(name, value),
                 None => std::env::remove_var(name),
             }
+        }
+    }
+
+    fn with_backend_selector_env(value: Option<&str>, test: impl FnOnce()) {
+        let _guard = BACKEND_SELECTOR_ENV_LOCK.lock().expect("env lock poisoned");
+        let original = std::env::var("DATAGATE_BACKEND").ok();
+
+        match value {
+            Some(value) => std::env::set_var("DATAGATE_BACKEND", value),
+            None => std::env::remove_var("DATAGATE_BACKEND"),
+        }
+
+        test();
+
+        match original {
+            Some(value) => std::env::set_var("DATAGATE_BACKEND", value),
+            None => std::env::remove_var("DATAGATE_BACKEND"),
         }
     }
 }

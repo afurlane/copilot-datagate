@@ -19,7 +19,7 @@ use audit::{AuditEvent, AuditLogger};
 use backend::mysql::MySqlBackend;
 use backend::postgres::PostgresBackend;
 use backend::sqlite::SqliteBackend;
-use config::Config;
+use config::{BackendSelector, Config};
 use metrics::MetricsRegistry;
 use policy::Policy;
 use rate_limit::RateLimiter;
@@ -84,27 +84,8 @@ async fn main() -> anyhow::Result<()> {
     let _policy = Policy::new(policy_config);
     tracing::info!(tables = policy_table_count, "policy engine ready");
 
-    if let Some(postgres_config) = config::PostgresConfig::from_env()? {
-        let postgres_backend = PostgresBackend::connect(&postgres_config).await?;
-        tracing::info!("PostgreSQL read-only connection established");
-        let schema = postgres_backend.load_schema().await?;
-        tracing::info!(
-            tables = schema.tables.len(),
-            views = schema.views.len(),
-            indexes = schema.indexes.len(),
-            constraints = schema.constraints.len(),
-            triggers = schema.triggers.len(),
-            routines = schema.routines.len(),
-            sequences = schema.sequences.len(),
-            "database schema loaded"
-        );
-    } else if let Some(mysql_config) = config::MySqlConfig::from_env()? {
-        let _mysql_backend = MySqlBackend::connect(&mysql_config).await?;
-        tracing::info!("MySQL/MariaDB read-only connection established");
-    } else if let Some(sqlite_config) = config::SqliteConfig::from_env()? {
-        let _sqlite_backend = SqliteBackend::connect(&sqlite_config).await?;
-        tracing::info!("SQLite read-only connection established");
-    }
+    let backend_selector = BackendSelector::from_env()?;
+    initialize_backend(backend_selector).await?;
 
     Ok(())
 }
@@ -162,6 +143,75 @@ fn build_rate_limiter(
     let max_requests = max_requests?.parse().ok()?;
     let window_secs = window_secs?.parse().ok()?;
     RateLimiter::new(max_requests, std::time::Duration::from_secs(window_secs))
+}
+
+async fn initialize_backend(selector: BackendSelector) -> anyhow::Result<()> {
+    match selector {
+        BackendSelector::Auto => {
+            if let Some(postgres_config) = config::PostgresConfig::from_env()? {
+                initialize_postgres(postgres_config).await?;
+            } else if let Some(mysql_config) = config::MySqlConfig::from_env()? {
+                initialize_mysql(mysql_config).await?;
+            } else if let Some(sqlite_config) = config::SqliteConfig::from_env()? {
+                initialize_sqlite(sqlite_config).await?;
+            }
+        }
+        BackendSelector::Postgres => {
+            let postgres_config = config::PostgresConfig::from_env()?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "DATAGATE_BACKEND=postgres but no PostgreSQL environment configuration was found"
+                )
+            })?;
+            initialize_postgres(postgres_config).await?;
+        }
+        BackendSelector::MySql => {
+            let mysql_config = config::MySqlConfig::from_env()?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "DATAGATE_BACKEND=mysql but no MySQL/MariaDB environment configuration was found"
+                )
+            })?;
+            initialize_mysql(mysql_config).await?;
+        }
+        BackendSelector::Sqlite => {
+            let sqlite_config = config::SqliteConfig::from_env()?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "DATAGATE_BACKEND=sqlite but no SQLite environment configuration was found"
+                )
+            })?;
+            initialize_sqlite(sqlite_config).await?;
+        }
+    }
+
+    Ok(())
+}
+
+async fn initialize_postgres(config: config::PostgresConfig) -> anyhow::Result<()> {
+    let postgres_backend = PostgresBackend::connect(&config).await?;
+    tracing::info!("PostgreSQL read-only connection established");
+    let schema = postgres_backend.load_schema().await?;
+    tracing::info!(
+        tables = schema.tables.len(),
+        views = schema.views.len(),
+        indexes = schema.indexes.len(),
+        constraints = schema.constraints.len(),
+        triggers = schema.triggers.len(),
+        routines = schema.routines.len(),
+        sequences = schema.sequences.len(),
+        "database schema loaded"
+    );
+    Ok(())
+}
+
+async fn initialize_mysql(config: config::MySqlConfig) -> anyhow::Result<()> {
+    let _mysql_backend = MySqlBackend::connect(&config).await?;
+    tracing::info!("MySQL/MariaDB read-only connection established");
+    Ok(())
+}
+
+async fn initialize_sqlite(config: config::SqliteConfig) -> anyhow::Result<()> {
+    let _sqlite_backend = SqliteBackend::connect(&config).await?;
+    tracing::info!("SQLite read-only connection established");
+    Ok(())
 }
 
 #[cfg(test)]

@@ -85,6 +85,18 @@ Opzioni pool MySQL/MariaDB:
 - `MYSQL_MAX_CONNECTIONS`
 - `MYSQL_ACQUIRE_TIMEOUT_SECS`
 
+### Selezione backend multi-database
+
+Per scegliere esplicitamente quale backend attivare, imposta `DATAGATE_BACKEND`:
+
+- `auto` (default): precedenza `postgres` -> `mysql` -> `sqlite`
+- `postgres`
+- `mysql` (o `mariadb`)
+- `sqlite`
+
+Quando `DATAGATE_BACKEND` è impostato a un backend specifico, DataGate richiede
+la relativa configurazione ambiente; in caso contrario termina con errore esplicito.
+
 Precedenza backend in bootstrap:
 
 1. PostgreSQL
