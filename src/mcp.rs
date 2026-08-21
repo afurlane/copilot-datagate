@@ -3,6 +3,7 @@
 use std::future::Future;
 use std::time::Instant;
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -52,7 +53,7 @@ impl McpApiDescriptor {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct SelectToolRequest {
     pub request_id: String,
     pub table: String,
@@ -62,7 +63,7 @@ pub struct SelectToolRequest {
     pub limit: Option<u32>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct SelectToolFilter {
     pub column: String,
     pub operator: SelectToolOperator,
@@ -71,7 +72,7 @@ pub struct SelectToolFilter {
     pub value_to: Option<Value>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum SelectToolOperator {
     Equals,
@@ -81,6 +82,7 @@ pub enum SelectToolOperator {
     GreaterThan,
     GreaterThanOrEqual,
     Like,
+    #[serde(rename = "ilike")]
     ILike,
     Between,
     FullText,
@@ -99,7 +101,7 @@ pub struct SelectToolResponse {
     pub rows: Vec<Value>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct SearchToolRequest {
     pub request_id: String,
     pub table: String,
@@ -109,7 +111,7 @@ pub struct SearchToolRequest {
     pub limit: Option<u32>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct AggregateToolRequest {
     pub request_id: String,
     pub table: String,
@@ -118,7 +120,7 @@ pub struct AggregateToolRequest {
     pub filters: Vec<SelectToolFilter>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum AggregateToolFunction {
     Count,
@@ -128,7 +130,7 @@ pub enum AggregateToolFunction {
     Max,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq)]
 pub struct AggregateToolOperation {
     pub function: AggregateToolFunction,
     pub column: String,

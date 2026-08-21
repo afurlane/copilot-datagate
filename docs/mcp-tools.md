@@ -50,6 +50,26 @@ The active policy is held behind a shared reloadable handle. Calling
 used by subsequent tool requests; existing tool instances do not need to be
 recreated. A failed file load leaves the currently active policy unchanged.
 
+## MCP stdio Transport
+
+The binary exposes a real MCP stdio server when configured explicitly:
+
+```bash
+DATAGATE_MCP_STDIO=1 \
+DATAGATE_BACKEND=sqlite \
+SQLITE_PATH=/path/to/database.db \
+DATAGATE_CONFIG=/path/to/datagate.toml \
+cargo run
+```
+
+The transport uses the `rmcp` SDK and exposes `initialize`, `tools/list`, and
+`tools/call` for the policy-safe `select`, `search`, and `aggregate` tools.
+The first transport integration supports SQLite explicitly; PostgreSQL and
+MySQL/MariaDB wiring remains a follow-up in the bootstrap layer.
+
+The transport returns the existing sanitized public error envelope and never
+accepts caller-provided SQL.
+
 Current backend implementations behind the read-only abstraction:
 
 - PostgreSQL
