@@ -46,7 +46,7 @@
 ## 🔵 Versione 1.0 — Release
 - [x] Stabilità API MCP
 - [x] Transport MCP stdio
-- [ ] Test end-to-end con Copilot
+- [x] Test end-to-end MCP (client rmcp + SQLite)
 - [ ] Benchmark
 - [ ] Hardening finale
 - [ ] Pubblicazione ufficiale

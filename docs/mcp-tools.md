@@ -70,6 +70,10 @@ MySQL/MariaDB wiring remains a follow-up in the bootstrap layer.
 The transport returns the existing sanitized public error envelope and never
 accepts caller-provided SQL.
 
+The transport test suite also runs a real `rmcp` client against the server over
+an in-memory duplex stream. It verifies tool discovery, a `select` call, and a
+policy rejection using a temporary SQLite database.
+
 Current backend implementations behind the read-only abstraction:
 
 - PostgreSQL
