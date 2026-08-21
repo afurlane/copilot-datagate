@@ -12,7 +12,8 @@ use crate::error::PublicError;
 use crate::metrics::MetricsRegistry;
 use crate::policy::Policy;
 use crate::query::{
-    BindValue, Filter, FilterOperator, QueryBuilderError, QueryPlan, SearchRequest, SelectRequest,
+    AggregateFunction, AggregateOperation, AggregateRequest, BindValue, Filter, FilterOperator,
+    QueryBuilderError, QueryPlan, SearchRequest, SelectRequest,
 };
 use crate::rate_limit::RateLimiter;
 
@@ -69,15 +70,49 @@ pub struct SearchToolRequest {
     pub limit: Option<u32>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct AggregateToolRequest {
+    pub request_id: String,
+    pub table: String,
+    pub operations: Vec<AggregateToolOperation>,
+    #[serde(default)]
+    pub filters: Vec<SelectToolFilter>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AggregateToolFunction {
+    Count,
+    Sum,
+    Avg,
+    Min,
+    Max,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct AggregateToolOperation {
+    pub function: AggregateToolFunction,
+    pub column: String,
+    pub alias: Option<String>,
+}
+
 pub type PreparedSearch = PreparedSelect;
 
+pub type PreparedAggregate = PreparedSelect;
+
 pub type SearchToolResponse = SelectToolResponse;
+
+pub type AggregateToolResponse = SelectToolResponse;
 
 pub struct SelectTool<'a> {
     runtime: ToolRuntime<'a>,
 }
 
 pub struct SearchTool<'a> {
+    runtime: ToolRuntime<'a>,
+}
+
+pub struct AggregateTool<'a> {
     runtime: ToolRuntime<'a>,
 }
 
@@ -118,17 +153,14 @@ impl<'a> SelectTool<'a> {
         let internal = self.convert_request(request)?;
         let prepared_request_id = request_id.clone();
 
-        self.runtime
-            .prepare(&request_id, "select", move |policy| {
-                internal
-                    .build(policy)
-                    .map(|plan| PreparedSelect {
-                        request_id: prepared_request_id.clone(),
-                        plan,
-                    })
-                    .map_err(public_error_for_query)
-            })
-            .await
+        let plan = self
+            .runtime
+            .prepare_plan(&request_id, "select", move |policy| internal.build(policy))
+            .await?;
+        Ok(PreparedSelect {
+            request_id: prepared_request_id,
+            plan,
+        })
     }
 
     /// Executes a prepared select through the read-only backend and returns rows only.
@@ -143,28 +175,16 @@ impl<'a> SelectTool<'a> {
                 self.prepare(request),
                 |prepared| (prepared.request_id, prepared.plan),
                 response_from_result,
-                |response| enforce_output_limit(self.runtime.policy, response),
+                |response| enforce_serialized_output_limit(self.runtime.policy, response),
             )
             .await
     }
 
     fn convert_request(&self, request: SelectToolRequest) -> Result<SelectRequest, PublicError> {
-        let filters = request
-            .filters
-            .into_iter()
-            .map(|filter| {
-                Ok(Filter {
-                    column: filter.column,
-                    operator: filter.operator.into(),
-                    value: bind_value(filter.value)?,
-                })
-            })
-            .collect::<Result<Vec<_>, PublicError>>()?;
-
         Ok(SelectRequest {
             table: request.table,
             columns: request.columns,
-            filters,
+            filters: convert_filters(request.filters)?,
             limit: request.limit,
         })
     }
@@ -203,17 +223,14 @@ impl<'a> SearchTool<'a> {
         };
         let prepared_request_id = request_id.clone();
 
-        self.runtime
-            .prepare(&request_id, "search", move |policy| {
-                internal
-                    .build(policy)
-                    .map(|plan| PreparedSearch {
-                        request_id: prepared_request_id.clone(),
-                        plan,
-                    })
-                    .map_err(public_error_for_query)
-            })
-            .await
+        let plan = self
+            .runtime
+            .prepare_plan(&request_id, "search", move |policy| internal.build(policy))
+            .await?;
+        Ok(PreparedSearch {
+            request_id: prepared_request_id,
+            plan,
+        })
     }
 
     pub async fn execute(
@@ -226,10 +243,106 @@ impl<'a> SearchTool<'a> {
                 backend,
                 self.prepare(request),
                 |prepared| (prepared.request_id, prepared.plan),
-                search_response_from_result,
-                |response| enforce_search_output_limit(self.runtime.policy, response),
+                response_from_result,
+                |response| enforce_serialized_output_limit(self.runtime.policy, response),
             )
             .await
+    }
+}
+
+impl<'a> AggregateTool<'a> {
+    pub fn new(policy: &'a Policy, audit: Option<&'a AuditLogger>) -> Self {
+        Self {
+            runtime: ToolRuntime::new(policy, audit),
+        }
+    }
+
+    pub fn with_rate_limiter(
+        policy: &'a Policy,
+        audit: Option<&'a AuditLogger>,
+        rate_limiter: &'a RateLimiter,
+    ) -> Self {
+        Self {
+            runtime: ToolRuntime::with_rate_limiter(policy, audit, rate_limiter),
+        }
+    }
+
+    pub fn with_metrics(mut self, metrics: &'a MetricsRegistry) -> Self {
+        self.runtime = self.runtime.with_metrics(metrics);
+        self
+    }
+
+    pub async fn prepare(
+        &self,
+        request: AggregateToolRequest,
+    ) -> Result<PreparedAggregate, PublicError> {
+        let request_id = request.request_id.clone();
+        let internal = AggregateRequest {
+            table: request.table,
+            operations: request
+                .operations
+                .into_iter()
+                .map(|operation| AggregateOperation {
+                    function: operation.function.into(),
+                    column: operation.column,
+                    alias: operation.alias,
+                })
+                .collect(),
+            filters: convert_filters(request.filters)?,
+        };
+        let prepared_request_id = request_id.clone();
+
+        let plan = self
+            .runtime
+            .prepare_plan(&request_id, "aggregate", move |policy| {
+                internal.build(policy)
+            })
+            .await?;
+        Ok(PreparedAggregate {
+            request_id: prepared_request_id,
+            plan,
+        })
+    }
+
+    pub async fn execute(
+        &self,
+        backend: &PostgresBackend,
+        request: AggregateToolRequest,
+    ) -> Result<AggregateToolResponse, PublicError> {
+        self.runtime
+            .execute(
+                backend,
+                self.prepare(request),
+                |prepared| (prepared.request_id, prepared.plan),
+                response_from_result,
+                |response| enforce_serialized_output_limit(self.runtime.policy, response),
+            )
+            .await
+    }
+}
+
+fn convert_filters(filters: Vec<SelectToolFilter>) -> Result<Vec<Filter>, PublicError> {
+    filters
+        .into_iter()
+        .map(|filter| {
+            Ok(Filter {
+                column: filter.column,
+                operator: filter.operator.into(),
+                value: bind_value(filter.value)?,
+            })
+        })
+        .collect()
+}
+
+impl From<AggregateToolFunction> for AggregateFunction {
+    fn from(function: AggregateToolFunction) -> Self {
+        match function {
+            AggregateToolFunction::Count => Self::Count,
+            AggregateToolFunction::Sum => Self::Sum,
+            AggregateToolFunction::Avg => Self::Avg,
+            AggregateToolFunction::Min => Self::Min,
+            AggregateToolFunction::Max => Self::Max,
+        }
     }
 }
 
@@ -303,6 +416,21 @@ impl<'a> ToolRuntime<'a> {
         if let Some(audit) = self.audit {
             let _ = audit.record(&event).await;
         }
+    }
+
+    async fn prepare_plan<F>(
+        &self,
+        request_id: &str,
+        operation: &str,
+        build: F,
+    ) -> Result<QueryPlan, PublicError>
+    where
+        F: FnOnce(&Policy) -> Result<QueryPlan, QueryBuilderError>,
+    {
+        self.prepare(request_id, operation, |policy| {
+            build(policy).map_err(public_error_for_query)
+        })
+        .await
     }
 
     async fn execute<P, T, Prepare, Split, BuildResponse, CheckOutput>(
@@ -385,25 +513,6 @@ fn response_from_result(request_id: String, result: SelectResult) -> SelectToolR
     }
 }
 
-fn search_response_from_result(request_id: String, result: SelectResult) -> SearchToolResponse {
-    SearchToolResponse {
-        request_id,
-        columns: result.columns,
-        rows: result.rows,
-    }
-}
-
-fn enforce_output_limit(policy: &Policy, response: &SelectToolResponse) -> Result<(), PublicError> {
-    enforce_serialized_output_limit(policy, response)
-}
-
-fn enforce_search_output_limit(
-    policy: &Policy,
-    response: &SearchToolResponse,
-) -> Result<(), PublicError> {
-    enforce_serialized_output_limit(policy, response)
-}
-
 fn enforce_serialized_output_limit<T: Serialize>(
     policy: &Policy,
     response: &T,
@@ -422,7 +531,8 @@ fn public_error_for_query(error: QueryBuilderError) -> PublicError {
         QueryBuilderError::Policy(_) => PublicError::policy_denied(),
         QueryBuilderError::InvalidIdentifier(_)
         | QueryBuilderError::EmptyColumns
-        | QueryBuilderError::EmptySearchColumns => PublicError::invalid_request(),
+        | QueryBuilderError::EmptySearchColumns
+        | QueryBuilderError::EmptyAggregates => PublicError::invalid_request(),
     }
 }
 
@@ -587,7 +697,7 @@ mod tests {
         };
 
         assert_eq!(
-            enforce_output_limit(&strict_policy, &response).unwrap_err(),
+            enforce_serialized_output_limit(&strict_policy, &response).unwrap_err(),
             PublicError::policy_denied()
         );
     }
@@ -611,6 +721,80 @@ mod tests {
         assert_eq!(
             prepared.plan.binds,
             vec![BindValue::Text("%alice%".into()), BindValue::Integer(10)]
+        );
+    }
+
+    #[tokio::test]
+    async fn prepares_aggregate_request_with_policy_checked_operations() {
+        let request = AggregateToolRequest {
+            request_id: "aggregate-1".into(),
+            table: "users".into(),
+            operations: vec![
+                AggregateToolOperation {
+                    function: AggregateToolFunction::Count,
+                    column: "*".into(),
+                    alias: Some("total".into()),
+                },
+                AggregateToolOperation {
+                    function: AggregateToolFunction::Avg,
+                    column: "id".into(),
+                    alias: Some("average_id".into()),
+                },
+            ],
+            filters: vec![SelectToolFilter {
+                column: "active".into(),
+                operator: SelectToolOperator::Equals,
+                value: Value::Bool(true),
+            }],
+        };
+
+        let prepared = AggregateTool::new(&policy(), None)
+            .prepare(request)
+            .await
+            .expect("valid aggregate request");
+        assert_eq!(prepared.request_id, "aggregate-1");
+        assert_eq!(
+            prepared.plan.sql,
+            "SELECT COUNT(*) AS \"total\", AVG(\"id\") AS \"average_id\" FROM \"users\" WHERE \"active\" = $1"
+        );
+        assert_eq!(prepared.plan.binds, vec![BindValue::Boolean(true)]);
+    }
+
+    #[tokio::test]
+    async fn aggregate_rejects_empty_operations() {
+        let request = AggregateToolRequest {
+            request_id: "aggregate-2".into(),
+            table: "users".into(),
+            operations: vec![],
+            filters: vec![],
+        };
+        assert_eq!(
+            AggregateTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::invalid_request()
+        );
+    }
+
+    #[tokio::test]
+    async fn aggregate_rejects_disallowed_operation_column() {
+        let request = AggregateToolRequest {
+            request_id: "aggregate-3".into(),
+            table: "users".into(),
+            operations: vec![AggregateToolOperation {
+                function: AggregateToolFunction::Sum,
+                column: "password".into(),
+                alias: None,
+            }],
+            filters: vec![],
+        };
+        assert_eq!(
+            AggregateTool::new(&policy(), None)
+                .prepare(request)
+                .await
+                .unwrap_err(),
+            PublicError::policy_denied()
         );
     }
 
@@ -654,7 +838,7 @@ mod tests {
         };
 
         assert_eq!(
-            enforce_search_output_limit(&strict_policy, &response).unwrap_err(),
+            enforce_serialized_output_limit(&strict_policy, &response).unwrap_err(),
             PublicError::policy_denied()
         );
     }
@@ -666,7 +850,7 @@ mod tests {
             columns: vec!["id".into()],
             rows: vec![serde_json::json!({"id": 1})],
         };
-        assert!(enforce_output_limit(&policy(), &response).is_ok());
+        assert!(enforce_serialized_output_limit(&policy(), &response).is_ok());
     }
 
     #[test]

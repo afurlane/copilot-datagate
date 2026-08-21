@@ -26,6 +26,8 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
     policy, audit ed errori sanitizzati; il transport MCP resta lo step successivo.
 - **MCP `search` tipizzato** — ricerca semantica con `ILIKE` su colonne consentite,
   query parametrizzate, policy/rate-limit/metriche/audit e output limit server-side.
+- **MCP `aggregate` tipizzato** — `count`, `sum`, `avg`, `min` e `max` su colonne
+    consentite, con filtri parametrizzati e senza supporto a SQL libero o `GROUP BY`.
 - **Catalogo schema controllato** — introspezione policy-filtered di tabelle, viste,
   indici, trigger, funzioni, procedure e sequenze; definizioni DDL solo quando sicure.
 - **Rate limiting** — protezione contro loop del modello e query troppo pesanti.
