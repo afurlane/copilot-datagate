@@ -11,6 +11,11 @@ use crate::config::{FilterOperatorConfig, PolicyConfig};
 pub enum PolicyError {
     #[error("table `{0}` is not allowed by policy")]
     TableNotAllowed(String),
+    #[error("unqualified table `{table}` is ambiguous; use one of: {candidates:?}")]
+    AmbiguousTableReference {
+        table: String,
+        candidates: Vec<String>,
+    },
     #[error("column `{column}` is not allowed on table `{table}`")]
     ColumnNotAllowed { table: String, column: String },
     #[error("operator is not allowed on `{table}.{column}`")]
@@ -44,22 +49,18 @@ impl Policy {
 
     /// Rejects any table not explicitly present in the allow-list.
     pub fn check_table(&self, table: &str) -> Result<(), PolicyError> {
-        if self.config.tables.contains_key(table) {
-            Ok(())
-        } else {
-            Err(PolicyError::TableNotAllowed(table.to_string()))
-        }
+        self.resolve_table_key(table).map(|_| ())
     }
 
     /// Rejects any column not explicitly allow-listed for the given table.
     pub fn check_column(&self, table: &str, column: &str) -> Result<(), PolicyError> {
-        self.check_table(table)?;
-        let allowed = &self.config.tables[table].columns;
+        let key = self.resolve_table_key(table)?;
+        let allowed = &self.config.tables[&key].columns;
         if allowed.iter().any(|c| c == column) {
             Ok(())
         } else {
             Err(PolicyError::ColumnNotAllowed {
-                table: table.to_string(),
+                table: key,
                 column: column.to_string(),
             })
         }
@@ -74,18 +75,56 @@ impl Policy {
         column: &str,
         operator: FilterOperatorConfig,
     ) -> Result<(), PolicyError> {
-        self.check_column(table, column)?;
-        let table_config = &self.config.tables[table];
+        let key = self.resolve_table_key(table)?;
+        let table_config = &self.config.tables[&key];
+        let allowed_columns = &table_config.columns;
+        if !allowed_columns.iter().any(|candidate| candidate == column) {
+            return Err(PolicyError::ColumnNotAllowed {
+                table: key,
+                column: column.to_string(),
+            });
+        }
         match table_config.filter_operators.get(column) {
             Some(allowed) if !allowed.contains(&operator) => {
                 Err(PolicyError::FilterOperatorNotAllowed {
-                    table: table.to_string(),
+                    table: key,
                     column: column.to_string(),
                     operator,
                 })
             }
             _ => Ok(()),
         }
+    }
+
+    fn resolve_table_key(&self, table: &str) -> Result<String, PolicyError> {
+        if self.config.tables.contains_key(table) {
+            return Ok(table.to_string());
+        }
+
+        if table.contains('.') {
+            return Err(PolicyError::TableNotAllowed(table.to_string()));
+        }
+
+        let suffix = format!(".{table}");
+        let mut candidates = self
+            .config
+            .tables
+            .keys()
+            .filter(|key| key.ends_with(&suffix))
+            .cloned()
+            .collect::<Vec<_>>();
+        if candidates.is_empty() {
+            return Err(PolicyError::TableNotAllowed(table.to_string()));
+        }
+        candidates.sort();
+        candidates.dedup();
+        if candidates.len() > 1 {
+            return Err(PolicyError::AmbiguousTableReference {
+                table: table.to_string(),
+                candidates,
+            });
+        }
+        Ok(candidates[0].clone())
     }
 
     /// Resolves the effective row limit for a request, applying the default when unset
@@ -295,5 +334,80 @@ mod tests {
                 operator: FilterOperatorConfig::FullText,
             }
         );
+    }
+
+    #[test]
+    fn allows_explicit_schema_qualified_table_keys() {
+        let mut tables = HashMap::new();
+        tables.insert(
+            "audit.users".to_string(),
+            TableConfig {
+                columns: vec!["id".to_string(), "email".to_string()],
+                filter_operators: HashMap::new(),
+            },
+        );
+        let policy = Policy::new(PolicyConfig {
+            tables,
+            default_row_limit: 50,
+            max_row_limit: 200,
+            max_query_complexity: 100,
+            max_output_bytes: 10_000,
+        });
+
+        assert!(policy.check_table("audit.users").is_ok());
+        assert!(policy.check_column("audit.users", "email").is_ok());
+    }
+
+    #[test]
+    fn resolves_unqualified_table_when_single_schema_match_exists() {
+        let mut tables = HashMap::new();
+        tables.insert(
+            "audit.users".to_string(),
+            TableConfig {
+                columns: vec!["id".to_string()],
+                filter_operators: HashMap::new(),
+            },
+        );
+        let policy = Policy::new(PolicyConfig {
+            tables,
+            default_row_limit: 50,
+            max_row_limit: 200,
+            max_query_complexity: 100,
+            max_output_bytes: 10_000,
+        });
+
+        assert!(policy.check_table("users").is_ok());
+        assert!(policy.check_column("users", "id").is_ok());
+    }
+
+    #[test]
+    fn rejects_ambiguous_unqualified_table_across_multiple_schemas() {
+        let mut tables = HashMap::new();
+        tables.insert(
+            "audit.users".to_string(),
+            TableConfig {
+                columns: vec!["id".to_string()],
+                filter_operators: HashMap::new(),
+            },
+        );
+        tables.insert(
+            "public.users".to_string(),
+            TableConfig {
+                columns: vec!["id".to_string()],
+                filter_operators: HashMap::new(),
+            },
+        );
+        let policy = Policy::new(PolicyConfig {
+            tables,
+            default_row_limit: 50,
+            max_row_limit: 200,
+            max_query_complexity: 100,
+            max_output_bytes: 10_000,
+        });
+
+        assert!(matches!(
+            policy.check_table("users"),
+            Err(PolicyError::AmbiguousTableReference { .. })
+        ));
     }
 }

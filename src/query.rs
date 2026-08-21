@@ -258,6 +258,20 @@ impl AggregateRequest {
 
 fn validate_table(policy: &Policy, table: &str) -> Result<String, QueryBuilderError> {
     policy.check_table(table)?;
+    quote_table_reference(table)
+}
+
+fn quote_table_reference(table: &str) -> Result<String, QueryBuilderError> {
+    if let Some((schema, relation)) = table.split_once('.') {
+        if relation.contains('.') {
+            return Err(QueryBuilderError::InvalidIdentifier(table.to_string()));
+        }
+        return Ok(format!(
+            "{}.{}",
+            quote_identifier(schema)?,
+            quote_identifier(relation)?
+        ));
+    }
     quote_identifier(table)
 }
 
@@ -478,6 +492,18 @@ mod tests {
             quote_identifier("users; DROP TABLE users"),
             Err(QueryBuilderError::InvalidIdentifier(_))
         ));
+        assert!(matches!(
+            quote_table_reference("public.users.logs"),
+            Err(QueryBuilderError::InvalidIdentifier(_))
+        ));
+    }
+
+    #[test]
+    fn quotes_schema_qualified_table_reference() {
+        assert_eq!(
+            quote_table_reference("audit.users").expect("valid reference"),
+            "\"audit\".\"users\""
+        );
     }
 
     #[test]
@@ -689,6 +715,39 @@ mod tests {
                 PolicyError::ColumnNotAllowed { .. }
             ))
         ));
+    }
+
+    #[test]
+    fn builds_select_with_schema_qualified_table() {
+        let mut tables = HashMap::new();
+        tables.insert(
+            "audit.users".to_string(),
+            TableConfig {
+                columns: vec!["id".into(), "email".into()],
+                filter_operators: HashMap::new(),
+            },
+        );
+        let policy = Policy::new(PolicyConfig {
+            tables,
+            default_row_limit: 25,
+            max_row_limit: 100,
+            max_query_complexity: 100,
+            max_output_bytes: 10_000,
+        });
+
+        let request = SelectRequest {
+            table: "audit.users".into(),
+            columns: vec!["id".into(), "email".into()],
+            filters: vec![],
+            limit: Some(7),
+        };
+
+        let plan = request.build(&policy).expect("valid query plan");
+        assert_eq!(
+            plan.sql,
+            "SELECT \"id\", \"email\" FROM \"audit\".\"users\" LIMIT $1"
+        );
+        assert_eq!(plan.binds, vec![BindValue::Integer(7)]);
     }
 
     #[test]

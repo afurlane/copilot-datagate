@@ -26,7 +26,7 @@
 - [x] Policy engine avanzato
 - [x] Schema awareness completa
 - [x] MCP tool: `aggregate`
-- [ ] Supporto multi-schema
+- [x] Supporto multi-schema
 
 ## 🔵 Versione 0.4 — Multi-Database
 - [ ] Backend astratto
