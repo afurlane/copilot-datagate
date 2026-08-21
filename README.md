@@ -19,7 +19,7 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 - **Concorrenza reale** — architettura asincrona e sicura, ideale per richieste parallele da Copilot.
 - **Metriche e audit** — tracciamento di richieste, tempi, errori e limiti per debugging e osservabilità.
 - **Profilazione performance** — profilo latenza in-process (min/media/p50/p95/p99/max) per monitoraggio evolutivo delle performance.
-- **Backend astratto** — trait read-only comune per backend database, con implementazioni concrete per PostgreSQL e SQLite.
+- **Backend astratto** — trait read-only comune per backend database, con implementazioni concrete per PostgreSQL, MySQL/MariaDB e SQLite.
 
 ## 🧩 Funzionalità principali
 
@@ -72,8 +72,26 @@ Opzioni pool SQLite:
 - `SQLITE_MAX_CONNECTIONS`
 - `SQLITE_ACQUIRE_TIMEOUT_SECS`
 
-Se sono presenti sia configurazione PostgreSQL sia SQLite, DataGate usa PostgreSQL
-come backend attivo. SQLite viene usato quando Postgres non è configurato.
+### Configurazione MySQL/MariaDB
+
+Per usare MySQL o MariaDB in modalità read-only, configura una delle due varianti:
+
+- URL completo: `MYSQL_URL`
+- modalità a componenti: `MYSQL_HOST`, `MYSQL_PORT` (default `3306`), `MYSQL_USER`,
+  `MYSQL_PASSWORD`, `MYSQL_DATABASE`
+
+Opzioni pool MySQL/MariaDB:
+
+- `MYSQL_MAX_CONNECTIONS`
+- `MYSQL_ACQUIRE_TIMEOUT_SECS`
+
+Precedenza backend in bootstrap:
+
+1. PostgreSQL
+2. MySQL/MariaDB
+3. SQLite
+
+Il primo backend configurato nella lista viene attivato.
 
 Il rate limiting server-side opzionale usa `RATE_LIMIT_REQUESTS` e
 `RATE_LIMIT_WINDOW_SECS`. Il limite è applicato per `request_id` prima di policy,
@@ -116,7 +134,7 @@ deny-all, senza avviare operazioni sul database.
 ## 🔧 Tecnologie
 
 - Linguaggio: **Rust**
-- Database: PostgreSQL e SQLite (oggi), altri DB domani
+- Database: PostgreSQL, MySQL/MariaDB e SQLite (oggi), altri DB domani
 - Protocollo: **MCP (Model Context Protocol)**
 - Architettura: asincrona, policy-driven, schema-aware
 

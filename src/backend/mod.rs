@@ -48,6 +48,7 @@ where
     value.map_or(Value::Null, Into::into)
 }
 
+pub mod mysql;
 pub mod postgres;
 pub mod sqlite;
 
@@ -55,6 +56,8 @@ pub mod sqlite;
 pub enum BackendError {
     #[error("PostgreSQL backend failed")]
     Postgres(#[from] postgres::PostgresBackendError),
+    #[error("MySQL backend failed")]
+    MySql(#[from] mysql::MySqlBackendError),
     #[error("SQLite backend failed")]
     Sqlite(#[from] sqlite::SqliteBackendError),
 }

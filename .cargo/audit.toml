@@ -1,0 +1,6 @@
+[advisories]
+ignore = [
+    # Transitive via sqlx-mysql -> rsa; no patched release currently available.
+    # Keep this scoped to RUSTSEC-2023-0071 only.
+    "RUSTSEC-2023-0071",
+]
