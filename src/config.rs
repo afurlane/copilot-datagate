@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+use sqlx::mysql::MySqlConnectOptions;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::sqlite::SqliteConnectOptions;
 use thiserror::Error;
@@ -144,6 +145,91 @@ impl std::fmt::Debug for PostgresConfig {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
             .debug_struct("PostgresConfig")
+            .field("connect_options", &"[redacted]")
+            .field("max_connections", &self.max_connections)
+            .field("acquire_timeout_secs", &self.acquire_timeout_secs)
+            .finish()
+    }
+}
+
+/// MySQL/MariaDB pool configuration sourced only from environment variables.
+/// The configured database role must itself be read-only; DataGate also enforces
+/// a read-only default for every pool session.
+#[derive(Clone)]
+pub struct MySqlConfig {
+    pub connect_options: MySqlConnectOptions,
+    pub max_connections: u32,
+    pub acquire_timeout_secs: u64,
+}
+
+impl MySqlConfig {
+    pub fn from_env() -> Result<Option<Self>, ConfigError> {
+        let has_url = env::var_os("MYSQL_URL").is_some();
+        let has_components = [
+            "MYSQL_HOST",
+            "MYSQL_USER",
+            "MYSQL_PORT",
+            "MYSQL_PASSWORD",
+            "MYSQL_DATABASE",
+        ]
+        .iter()
+        .any(|name| env::var_os(name).is_some());
+
+        if !has_url && !has_components {
+            return Ok(None);
+        }
+
+        let connect_options = if let Some(url) = env::var_os("MYSQL_URL") {
+            let url = url.to_str().ok_or(ConfigError::InvalidEnvironment {
+                variable: "MYSQL_URL",
+            })?;
+            MySqlConnectOptions::from_str(url).map_err(|_| ConfigError::InvalidEnvironment {
+                variable: "MYSQL_URL",
+            })?
+        } else {
+            let host = required_env("MYSQL_HOST")?;
+            let user = required_env("MYSQL_USER")?;
+            let database = required_env("MYSQL_DATABASE")?;
+            let port = optional_env("MYSQL_PORT")?
+                .map(|value| {
+                    value
+                        .parse::<u16>()
+                        .map_err(|_| ConfigError::InvalidEnvironment {
+                            variable: "MYSQL_PORT",
+                        })
+                })
+                .transpose()?
+                .unwrap_or(3306);
+
+            let mut options = MySqlConnectOptions::new()
+                .host(&host)
+                .port(port)
+                .username(&user)
+                .database(&database);
+            if let Some(password) = optional_env("MYSQL_PASSWORD")? {
+                options = options.password(&password);
+            }
+            options
+        };
+
+        Ok(Some(Self {
+            connect_options,
+            max_connections: env_u32_or_default(
+                "MYSQL_MAX_CONNECTIONS",
+                default_max_connections(),
+            )?,
+            acquire_timeout_secs: env_u64_or_default(
+                "MYSQL_ACQUIRE_TIMEOUT_SECS",
+                default_acquire_timeout_secs(),
+            )?,
+        }))
+    }
+}
+
+impl std::fmt::Debug for MySqlConfig {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("MySqlConfig")
             .field("connect_options", &"[redacted]")
             .field("max_connections", &self.max_connections)
             .field("acquire_timeout_secs", &self.acquire_timeout_secs)

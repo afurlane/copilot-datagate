@@ -16,6 +16,7 @@ mod rate_limit;
 mod schema;
 
 use audit::{AuditEvent, AuditLogger};
+use backend::mysql::MySqlBackend;
 use backend::postgres::PostgresBackend;
 use backend::sqlite::SqliteBackend;
 use config::Config;
@@ -97,6 +98,9 @@ async fn main() -> anyhow::Result<()> {
             sequences = schema.sequences.len(),
             "database schema loaded"
         );
+    } else if let Some(mysql_config) = config::MySqlConfig::from_env()? {
+        let _mysql_backend = MySqlBackend::connect(&mysql_config).await?;
+        tracing::info!("MySQL/MariaDB read-only connection established");
     } else if let Some(sqlite_config) = config::SqliteConfig::from_env()? {
         let _sqlite_backend = SqliteBackend::connect(&sqlite_config).await?;
         tracing::info!("SQLite read-only connection established");

@@ -32,6 +32,7 @@ All MCP tools must satisfy these invariants:
 Current backend implementations behind the read-only abstraction:
 
 - PostgreSQL
+- MySQL/MariaDB
 - SQLite
 
 ## Tool: select
