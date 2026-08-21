@@ -66,7 +66,8 @@ impl SqliteBackend {
         plan: &QueryPlan,
     ) -> Result<SelectResult, SqliteBackendError> {
         let sql = plan.sql.replace(" ILIKE ", " LIKE ");
-        let query = crate::backend::bind_query_values!(sqlx::query(&sql), &plan.binds);
+        let query =
+            crate::backend::bind_query_values!(sqlx::query(sqlx::AssertSqlSafe(sql)), &plan.binds);
 
         let rows = query
             .fetch_all(&self.pool)
