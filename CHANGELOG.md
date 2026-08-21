@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/afurlane/copilot-datagate/compare/copilot-datagate-v0.2.1...copilot-datagate-v0.3.0) (2026-08-21)
+
+
+### Features
+
+* **mcp:** support postgres stdio benchmarks ([#41](https://github.com/afurlane/copilot-datagate/issues/41)) ([56af705](https://github.com/afurlane/copilot-datagate/commit/56af70591fb40f84e38c73e21cab84f8241e0c18))
+
 ## [0.2.1](https://github.com/afurlane/copilot-datagate/compare/copilot-datagate-v0.2.0...copilot-datagate-v0.2.1) (2026-08-21)
 
 
