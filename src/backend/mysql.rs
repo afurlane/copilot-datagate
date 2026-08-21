@@ -109,9 +109,7 @@ fn row_to_json(row: MySqlRow) -> Result<Value, MySqlBackendError> {
                 .map(json_or_null),
             "JSON" => row
                 .try_get::<Option<String>, _>(column.ordinal())
-                .map(|value| {
-                    json_or_null(value.and_then(|text| serde_json::from_str::<Value>(&text).ok()))
-                }),
+                .map(parse_mysql_json_text),
             _ => row
                 .try_get::<Option<String>, _>(column.ordinal())
                 .map(json_or_null),
@@ -120,6 +118,10 @@ fn row_to_json(row: MySqlRow) -> Result<Value, MySqlBackendError> {
         object.insert(name, value);
     }
     Ok(Value::Object(object))
+}
+
+fn parse_mysql_json_text(value: Option<String>) -> Value {
+    json_or_null(value.and_then(|text| serde_json::from_str::<Value>(&text).ok()))
 }
 
 impl ReadOnlyBackend for MySqlBackend {
@@ -173,5 +175,36 @@ mod tests {
             result,
             Err(MySqlBackendError::InvalidConfiguration)
         ));
+    }
+
+    #[tokio::test]
+    async fn returns_connect_error_for_unreachable_server() {
+        let config = MySqlConfig {
+            connect_options: sqlx::mysql::MySqlConnectOptions::new()
+                .host("127.0.0.1")
+                .port(9)
+                .username("reader")
+                .password("secret")
+                .database("application"),
+            max_connections: 1,
+            acquire_timeout_secs: 1,
+        };
+        let result = MySqlBackend::connect(&config).await;
+        assert!(matches!(result, Err(MySqlBackendError::Connect(_))));
+    }
+
+    #[test]
+    fn parses_mysql_json_text_value() {
+        let value = parse_mysql_json_text(Some(r#"{"ok":true,"n":7}"#.to_string()));
+        assert_eq!(value, serde_json::json!({"ok": true, "n": 7}));
+    }
+
+    #[test]
+    fn returns_null_when_mysql_json_text_is_invalid_or_missing() {
+        assert_eq!(
+            parse_mysql_json_text(Some("not-json".to_string())),
+            Value::Null
+        );
+        assert_eq!(parse_mysql_json_text(None), Value::Null);
     }
 }

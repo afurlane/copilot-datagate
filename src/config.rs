@@ -426,6 +426,9 @@ fn default_max_output_bytes() -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static MYSQL_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn parses_policy_from_toml() {
@@ -586,5 +589,130 @@ mod tests {
                 variable: "DB_OPTIONS"
             }
         ));
+    }
+
+    #[test]
+    fn mysql_config_is_none_when_mysql_env_is_absent() {
+        with_mysql_env(
+            &[
+                ("MYSQL_URL", None),
+                ("MYSQL_HOST", None),
+                ("MYSQL_PORT", None),
+                ("MYSQL_USER", None),
+                ("MYSQL_PASSWORD", None),
+                ("MYSQL_DATABASE", None),
+                ("MYSQL_MAX_CONNECTIONS", None),
+                ("MYSQL_ACQUIRE_TIMEOUT_SECS", None),
+            ],
+            || {
+                let config = MySqlConfig::from_env().expect("mysql env parsing should succeed");
+                assert!(config.is_none());
+            },
+        );
+    }
+
+    #[test]
+    fn mysql_config_parses_url_and_pool_overrides() {
+        with_mysql_env(
+            &[
+                (
+                    "MYSQL_URL",
+                    Some("mysql://reader:secret@localhost:3306/app"),
+                ),
+                ("MYSQL_MAX_CONNECTIONS", Some("17")),
+                ("MYSQL_ACQUIRE_TIMEOUT_SECS", Some("9")),
+            ],
+            || {
+                let config = MySqlConfig::from_env()
+                    .expect("mysql env parsing should succeed")
+                    .expect("mysql config should be present");
+                assert_eq!(config.max_connections, 17);
+                assert_eq!(config.acquire_timeout_secs, 9);
+            },
+        );
+    }
+
+    #[test]
+    fn mysql_config_parses_components_with_default_port() {
+        with_mysql_env(
+            &[
+                ("MYSQL_HOST", Some("localhost")),
+                ("MYSQL_USER", Some("reader")),
+                ("MYSQL_DATABASE", Some("app")),
+                ("MYSQL_PASSWORD", Some("secret")),
+                ("MYSQL_PORT", None),
+            ],
+            || {
+                let config = MySqlConfig::from_env()
+                    .expect("mysql env parsing should succeed")
+                    .expect("mysql config should be present");
+                assert_eq!(config.max_connections, default_max_connections());
+                assert_eq!(config.acquire_timeout_secs, default_acquire_timeout_secs());
+            },
+        );
+    }
+
+    #[test]
+    fn mysql_config_rejects_invalid_port() {
+        with_mysql_env(
+            &[
+                ("MYSQL_HOST", Some("localhost")),
+                ("MYSQL_USER", Some("reader")),
+                ("MYSQL_DATABASE", Some("app")),
+                ("MYSQL_PORT", Some("invalid")),
+            ],
+            || {
+                let err = MySqlConfig::from_env().expect_err("invalid port must fail");
+                assert!(matches!(
+                    err,
+                    ConfigError::InvalidEnvironment {
+                        variable: "MYSQL_PORT"
+                    }
+                ));
+            },
+        );
+    }
+
+    #[test]
+    fn mysql_config_rejects_partial_component_configuration() {
+        with_mysql_env(
+            &[
+                ("MYSQL_HOST", Some("localhost")),
+                ("MYSQL_USER", None),
+                ("MYSQL_DATABASE", Some("app")),
+            ],
+            || {
+                let err = MySqlConfig::from_env().expect_err("missing user must fail");
+                assert!(matches!(
+                    err,
+                    ConfigError::InvalidEnvironment {
+                        variable: "MYSQL_USER"
+                    }
+                ));
+            },
+        );
+    }
+
+    fn with_mysql_env(overrides: &[(&str, Option<&str>)], test: impl FnOnce()) {
+        let _guard = MYSQL_ENV_LOCK.lock().expect("env lock poisoned");
+        let mut original = Vec::with_capacity(overrides.len());
+        for (name, _) in overrides {
+            original.push((name.to_string(), std::env::var(name).ok()));
+        }
+        for (name, value) in overrides {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
+
+        test();
+
+        for (name, value) in original {
+            match value {
+                Some(value) => std::env::set_var(name, value),
+                None => std::env::remove_var(name),
+            }
+        }
     }
 }
