@@ -38,7 +38,7 @@
 ## 🔵 Versione 0.5 — Enterprise Layer
 - [x] Logging strutturato
 - [x] Profilazione performance
-- [ ] Hardening sicurezza
+- [x] Hardening sicurezza
 - [ ] Policy engine dinamico
 - [ ] Documentazione completa
 - [ ] Versione 1.0 candidate

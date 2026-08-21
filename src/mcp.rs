@@ -17,6 +17,13 @@ use crate::query::{
 };
 use crate::rate_limit::RateLimiter;
 
+const MAX_REQUEST_ID_LEN: usize = 128;
+const MAX_TEXT_INPUT_BYTES: usize = 4096;
+const MAX_FILTERS: usize = 64;
+const MAX_COLUMNS: usize = 128;
+const MAX_SEARCHABLE_COLUMNS: usize = 64;
+const MAX_AGGREGATE_OPERATIONS: usize = 64;
+
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct SelectToolRequest {
     pub request_id: String,
@@ -154,6 +161,8 @@ impl<'a> SelectTool<'a> {
     /// The plan remains internal and is never serialized as an MCP response.
     pub async fn prepare(&self, request: SelectToolRequest) -> Result<PreparedSelect, PublicError> {
         let request_id = request.request_id.clone();
+        validate_request_id(&request_id)?;
+        validate_select_request_shape(&request)?;
         let internal = self.convert_request(request)?;
         let prepared_request_id = request_id.clone();
 
@@ -218,6 +227,8 @@ impl<'a> SearchTool<'a> {
 
     pub async fn prepare(&self, request: SearchToolRequest) -> Result<PreparedSearch, PublicError> {
         let request_id = request.request_id.clone();
+        validate_request_id(&request_id)?;
+        validate_search_request_shape(&request)?;
         let internal = SearchRequest {
             table: request.table,
             columns: request.columns,
@@ -281,6 +292,8 @@ impl<'a> AggregateTool<'a> {
         request: AggregateToolRequest,
     ) -> Result<PreparedAggregate, PublicError> {
         let request_id = request.request_id.clone();
+        validate_request_id(&request_id)?;
+        validate_aggregate_request_shape(&request)?;
         let internal = AggregateRequest {
             table: request.table,
             operations: request
@@ -338,6 +351,72 @@ fn convert_filters(filters: Vec<SelectToolFilter>) -> Result<Vec<Filter>, Public
             })
         })
         .collect()
+}
+
+fn validate_request_id(request_id: &str) -> Result<(), PublicError> {
+    if request_id.is_empty() || request_id.len() > MAX_REQUEST_ID_LEN {
+        return Err(PublicError::invalid_request());
+    }
+    if !request_id
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.' | ':'))
+    {
+        return Err(PublicError::invalid_request());
+    }
+    Ok(())
+}
+
+fn validate_select_request_shape(request: &SelectToolRequest) -> Result<(), PublicError> {
+    guard_max_count(request.columns.len(), MAX_COLUMNS)?;
+    guard_max_count(request.filters.len(), MAX_FILTERS)?;
+    for filter in &request.filters {
+        validate_value_shape_and_size(&filter.value)?;
+        if let Some(value_to) = &filter.value_to {
+            validate_value_shape_and_size(value_to)?;
+        }
+    }
+    Ok(())
+}
+
+fn validate_search_request_shape(request: &SearchToolRequest) -> Result<(), PublicError> {
+    guard_max_count(request.columns.len(), MAX_COLUMNS)?;
+    guard_max_count(request.searchable_columns.len(), MAX_SEARCHABLE_COLUMNS)?;
+    guard_text_len(&request.text)?;
+    Ok(())
+}
+
+fn validate_aggregate_request_shape(request: &AggregateToolRequest) -> Result<(), PublicError> {
+    guard_max_count(request.operations.len(), MAX_AGGREGATE_OPERATIONS)?;
+    guard_max_count(request.filters.len(), MAX_FILTERS)?;
+    for filter in &request.filters {
+        validate_value_shape_and_size(&filter.value)?;
+        if let Some(value_to) = &filter.value_to {
+            validate_value_shape_and_size(value_to)?;
+        }
+    }
+    Ok(())
+}
+
+fn guard_max_count(actual: usize, max: usize) -> Result<(), PublicError> {
+    if actual > max {
+        return Err(PublicError::invalid_request());
+    }
+    Ok(())
+}
+
+fn validate_value_shape_and_size(value: &Value) -> Result<(), PublicError> {
+    match value {
+        Value::String(text) => guard_text_len(text),
+        Value::Null | Value::Array(_) | Value::Object(_) => Err(PublicError::invalid_request()),
+        Value::Number(_) | Value::Bool(_) => Ok(()),
+    }
+}
+
+fn guard_text_len(text: &str) -> Result<(), PublicError> {
+    if text.len() > MAX_TEXT_INPUT_BYTES {
+        return Err(PublicError::invalid_request());
+    }
+    Ok(())
 }
 
 impl From<AggregateToolFunction> for AggregateFunction {
@@ -564,7 +643,10 @@ impl From<SelectToolOperator> for FilterOperator {
 
 fn bind_value(value: Value) -> Result<BindValue, PublicError> {
     match value {
-        Value::String(value) => Ok(BindValue::Text(value)),
+        Value::String(value) => {
+            guard_text_len(&value)?;
+            Ok(BindValue::Text(value))
+        }
         Value::Number(value) if value.is_i64() => value
             .as_i64()
             .map(BindValue::Integer)
@@ -927,6 +1009,87 @@ mod tests {
                 .unwrap_err(),
             PublicError::invalid_request()
         );
+    }
+
+    #[tokio::test]
+    async fn rejects_request_with_invalid_request_id_characters() {
+        let request = SelectToolRequest {
+            request_id: "bad id".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: vec![],
+            limit: Some(1),
+        };
+
+        let error = SelectTool::new(&policy(), None)
+            .prepare(request)
+            .await
+            .unwrap_err();
+        assert_eq!(error, PublicError::invalid_request());
+    }
+
+    #[tokio::test]
+    async fn rejects_request_with_too_many_filters() {
+        let request = SelectToolRequest {
+            request_id: "request-many-filters".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: (0..(MAX_FILTERS + 1))
+                .map(|_| SelectToolFilter {
+                    column: "id".into(),
+                    operator: SelectToolOperator::Equals,
+                    value: Value::Number(serde_json::Number::from(1)),
+                    value_to: None,
+                })
+                .collect(),
+            limit: Some(1),
+        };
+
+        let error = SelectTool::new(&policy(), None)
+            .prepare(request)
+            .await
+            .unwrap_err();
+        assert_eq!(error, PublicError::invalid_request());
+    }
+
+    #[tokio::test]
+    async fn rejects_search_request_with_oversized_text_payload() {
+        let request = SearchToolRequest {
+            request_id: "search-oversized".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            searchable_columns: vec!["email".into()],
+            text: "x".repeat(MAX_TEXT_INPUT_BYTES + 1),
+            limit: Some(1),
+        };
+
+        let error = SearchTool::new(&policy(), None)
+            .prepare(request)
+            .await
+            .unwrap_err();
+        assert_eq!(error, PublicError::invalid_request());
+    }
+
+    #[tokio::test]
+    async fn rejects_select_filter_with_oversized_text_value() {
+        let request = SelectToolRequest {
+            request_id: "request-oversized-filter".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: vec![SelectToolFilter {
+                column: "email".into(),
+                operator: SelectToolOperator::Like,
+                value: Value::String("x".repeat(MAX_TEXT_INPUT_BYTES + 1)),
+                value_to: None,
+            }],
+            limit: Some(1),
+        };
+
+        let error = SelectTool::new(&policy(), None)
+            .prepare(request)
+            .await
+            .unwrap_err();
+        assert_eq!(error, PublicError::invalid_request());
     }
 
     #[tokio::test]
