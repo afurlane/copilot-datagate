@@ -46,6 +46,7 @@ All MCP tools must satisfy these invariants:
 - `column: String`
 - `operator: SelectToolOperator`
 - `value: serde_json::Value`
+- `value_to: Option<serde_json::Value>` (required for `between`, ignored otherwise)
 
 `SelectToolOperator`
 
@@ -57,13 +58,22 @@ All MCP tools must satisfy these invariants:
 - `greater_than_or_equal`
 - `like`
 - `ilike`
+- `between`
+- `full_text`
+
+Advanced filter semantics:
+
+- `between`: builds `column BETWEEN $n AND $n+1` with two parameterized binds.
+- `like`/`ilike`: require text bind values.
+- `full_text`: builds `to_tsvector('simple', coalesce(column::text, '')) @@ plainto_tsquery('simple', $n)` with a single text bind.
 
 ### Execution Flow
 
 1. `prepare` validates rate limit (if configured).
 2. JSON request is converted to internal `SelectRequest`.
 3. Query builder validates table/columns/filters and policy limits.
-4. Backend executes a parameterized SELECT.
+4. Backend executes a parameterized SELECT (including advanced predicates for
+    `between` and `full_text` when requested).
 5. Response payload size is validated against `max_output_bytes`.
 
 ### Response Contract

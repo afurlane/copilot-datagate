@@ -28,6 +28,8 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
   query parametrizzate, policy/rate-limit/metriche/audit e output limit server-side.
 - **MCP `aggregate` tipizzato** — `count`, `sum`, `avg`, `min` e `max` su colonne
     consentite, con filtri parametrizzati e senza supporto a SQL libero o `GROUP BY`.
+- **Filtri avanzati** — supporto a pattern (`LIKE`/`ILIKE`), range (`BETWEEN`) e
+    full-text (`to_tsvector` + `plainto_tsquery`) sempre parametrizzati e validati da policy.
 - **Catalogo schema controllato** — introspezione policy-filtered di tabelle, viste,
   indici, trigger, funzioni, procedure e sequenze; definizioni DDL solo quando sicure.
 - **Rate limiting** — protezione contro loop del modello e query troppo pesanti.
