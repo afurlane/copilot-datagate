@@ -179,6 +179,7 @@ Documentazione completa:
 - [ROADMAP.md](ROADMAP.md) — roadmap dettagliata verso la 1.0
 - [docs/configuration.md](docs/configuration.md) — quick start, backend, policy e operazioni
 - [docs/benchmarks.md](docs/benchmarks.md) — benchmark locali SQLite e PostgreSQL reale
+- [docs/hardening.md](docs/hardening.md) — checklist hardening finale per il confine MCP/database
 - [docs/release-candidate.md](docs/release-candidate.md) — criteri e gate della 1.0 candidate
 - [docs/mcp-tools.md](docs/mcp-tools.md) — contratti interni e regole dei tool MCP
 - [CONTRIBUTING.md](CONTRIBUTING.md) — regole di contribuzione, commit e branch
@@ -201,6 +202,7 @@ Per l'avvio da VS Code con MCP:
 - [x] Stabilità API MCP (descriptor versionato; transport stdio)
 - [x] Transport MCP stdio
 - [x] Benchmark
+- [x] Hardening finale
 - [ ] Versione 1.0 candidate
 
 ## 📄 Licenza
