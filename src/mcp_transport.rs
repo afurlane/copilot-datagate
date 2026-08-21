@@ -113,13 +113,16 @@ mod tests {
     use super::*;
     use crate::config::{PolicyConfig, TableConfig};
     use std::collections::HashMap;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use rmcp::handler::server::wrapper::Parameters;
 
     fn policy() -> Policy {
         let mut tables = HashMap::new();
         tables.insert(
             "users".into(),
             TableConfig {
-                columns: vec!["id".into()],
+                columns: vec!["id".into(), "email".into(), "active".into()],
                 filter_operators: HashMap::new(),
             },
         );
@@ -142,5 +145,78 @@ mod tests {
     #[test]
     fn constructs_policy_for_transport_state() {
         assert!(policy().check_table("users").is_ok());
+    }
+
+    #[tokio::test]
+    async fn invokes_select_search_and_aggregate_over_read_only_sqlite() {
+        let path = std::env::temp_dir().join(format!(
+            "datagate-mcp-{}-{}.db",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        let setup_options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true);
+        let setup_pool = sqlx::SqlitePool::connect_with(setup_options)
+            .await
+            .expect("setup database");
+        sqlx::query("CREATE TABLE users (id INTEGER, email TEXT, active INTEGER)")
+            .execute(&setup_pool)
+            .await
+            .expect("create users table");
+        sqlx::query("INSERT INTO users (id, email, active) VALUES (1, 'alice@example.com', 1)")
+            .execute(&setup_pool)
+            .await
+            .expect("insert user");
+        setup_pool.close().await;
+
+        let backend = connect_sqlite(path.to_string_lossy().into_owned())
+            .await
+            .expect("read-only backend");
+        let server = McpServer::new(backend, policy());
+
+        let select = server
+            .select(Parameters(SelectToolRequest {
+                request_id: "transport-select".into(),
+                table: "users".into(),
+                columns: vec!["id".into()],
+                filters: vec![],
+                limit: Some(1),
+            }))
+            .await;
+        assert!(select.contains("transport-select"));
+        assert!(select.contains("\"id\":1"));
+
+        let search = server
+            .search(Parameters(SearchToolRequest {
+                request_id: "transport-search".into(),
+                table: "users".into(),
+                columns: vec!["id".into(), "email".into()],
+                searchable_columns: vec!["email".into()],
+                text: "alice".into(),
+                limit: Some(1),
+            }))
+            .await;
+        assert!(search.contains("alice@example.com"));
+
+        let aggregate = server
+            .aggregate(Parameters(AggregateToolRequest {
+                request_id: "transport-aggregate".into(),
+                table: "users".into(),
+                operations: vec![crate::mcp::AggregateToolOperation {
+                    function: crate::mcp::AggregateToolFunction::Count,
+                    column: "*".into(),
+                    alias: Some("total".into()),
+                }],
+                filters: vec![],
+            }))
+            .await;
+        assert!(aggregate.contains("transport-aggregate"));
+        assert!(aggregate.contains("total"));
+
+        std::fs::remove_file(path).expect("remove test database");
     }
 }

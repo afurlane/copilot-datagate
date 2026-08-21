@@ -65,7 +65,8 @@ impl SqliteBackend {
         &self,
         plan: &QueryPlan,
     ) -> Result<SelectResult, SqliteBackendError> {
-        let query = crate::backend::bind_query_values!(sqlx::query(&plan.sql), &plan.binds);
+        let sql = plan.sql.replace(" ILIKE ", " LIKE ");
+        let query = crate::backend::bind_query_values!(sqlx::query(&sql), &plan.binds);
 
         let rows = query
             .fetch_all(&self.pool)
@@ -85,7 +86,7 @@ fn row_to_json(row: SqliteRow) -> Result<Value, SqliteBackendError> {
     for column in row.columns() {
         let name = column.name().to_string();
         let value = match column.type_info().name() {
-            "INTEGER" | "INT" => row
+            "INTEGER" | "INT" | "INT64" | "NULL" => row
                 .try_get::<Option<i64>, _>(column.ordinal())
                 .map(json_or_null),
             "REAL" | "FLOAT" | "DOUBLE" => row
