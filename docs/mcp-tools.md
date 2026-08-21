@@ -29,6 +29,17 @@ All MCP tools must satisfy these invariants:
 - Optional rate limiting is evaluated before query execution.
 - Optional in-process metrics are recorded per request outcome.
 
+Hardening input envelope (server-side):
+
+- `request_id` format validation (`[A-Za-z0-9._:-]`, max length 128)
+- max text payload length (4096 bytes) for search/filter string values
+- max filters per request (64)
+- max selected columns (128)
+- max searchable columns (64)
+- max aggregate operations (64)
+
+Requests outside these bounds are rejected with sanitized `invalid_request`.
+
 Current backend implementations behind the read-only abstraction:
 
 - PostgreSQL
