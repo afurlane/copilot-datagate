@@ -46,6 +46,7 @@ All MCP tools must satisfy these invariants:
 - `column: String`
 - `operator: SelectToolOperator`
 - `value: serde_json::Value`
+- `value_to: Option<serde_json::Value>` (required for `between`, ignored otherwise)
 
 `SelectToolOperator`
 
@@ -57,6 +58,20 @@ All MCP tools must satisfy these invariants:
 - `greater_than_or_equal`
 - `like`
 - `ilike`
+- `between`
+- `full_text`
+
+Advanced filter semantics:
+
+- `between`: builds `column BETWEEN $n AND $n+1` with two parameterized binds.
+- `like`/`ilike`: require text bind values.
+- `full_text`: builds `to_tsvector('simple', coalesce(column::text, '')) @@ plainto_tsquery('simple', $n)` with a single text bind.
+
+Policy constraints:
+
+- `filter_operators` is optional per table/column in configuration.
+- if a column declares `filter_operators`, only those operators are accepted.
+- if not declared, all operators remain allowed (backward compatible behavior).
 
 ### Execution Flow
 

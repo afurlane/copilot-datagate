@@ -2,6 +2,7 @@
 
 use thiserror::Error;
 
+use crate::config::FilterOperatorConfig;
 use crate::policy::{Policy, PolicyError};
 
 #[derive(Debug, Error, PartialEq)]
@@ -16,6 +17,12 @@ pub enum QueryBuilderError {
     EmptySearchColumns,
     #[error("an aggregate request must contain at least one operation")]
     EmptyAggregates,
+    #[error("filter on column `{0}` requires a secondary value")]
+    MissingSecondaryFilterValue(String),
+    #[error("filter on column `{0}` does not accept a secondary value")]
+    UnexpectedSecondaryFilterValue(String),
+    #[error("filter on column `{0}` requires text values")]
+    InvalidTextFilterValue(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,6 +43,8 @@ pub enum FilterOperator {
     GreaterThanOrEqual,
     Like,
     ILike,
+    Between,
+    FullText,
 }
 
 impl FilterOperator {
@@ -49,6 +58,25 @@ impl FilterOperator {
             Self::GreaterThanOrEqual => ">=",
             Self::Like => "LIKE",
             Self::ILike => "ILIKE",
+            Self::Between => "BETWEEN",
+            Self::FullText => "@@",
+        }
+    }
+}
+
+impl From<FilterOperator> for FilterOperatorConfig {
+    fn from(operator: FilterOperator) -> Self {
+        match operator {
+            FilterOperator::Equals => Self::Equals,
+            FilterOperator::NotEquals => Self::NotEquals,
+            FilterOperator::LessThan => Self::LessThan,
+            FilterOperator::LessThanOrEqual => Self::LessThanOrEqual,
+            FilterOperator::GreaterThan => Self::GreaterThan,
+            FilterOperator::GreaterThanOrEqual => Self::GreaterThanOrEqual,
+            FilterOperator::Like => Self::Like,
+            FilterOperator::ILike => Self::ILike,
+            FilterOperator::Between => Self::Between,
+            FilterOperator::FullText => Self::FullText,
         }
     }
 }
@@ -58,6 +86,7 @@ pub struct Filter {
     pub column: String,
     pub operator: FilterOperator,
     pub value: BindValue,
+    pub value_to: Option<BindValue>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -253,17 +282,77 @@ fn build_filters(
 ) -> Result<(String, Vec<BindValue>), QueryBuilderError> {
     let mut predicates = Vec::with_capacity(filters.len());
     let mut binds = Vec::with_capacity(filters.len());
-    for (index, filter) in filters.iter().enumerate() {
+    let mut bind_index = 1;
+    for filter in filters {
         policy.check_column(table, &filter.column)?;
-        predicates.push(format!(
-            "{} {} ${}",
-            quote_identifier(&filter.column)?,
-            filter.operator.sql(),
-            index + 1
-        ));
-        binds.push(filter.value.clone());
+        policy.check_filter_operator(table, &filter.column, filter.operator.into())?;
+        let quoted_column = quote_identifier(&filter.column)?;
+        match filter.operator {
+            FilterOperator::Between => {
+                let value_to = filter.value_to.clone().ok_or_else(|| {
+                    QueryBuilderError::MissingSecondaryFilterValue(filter.column.clone())
+                })?;
+                predicates.push(format!(
+                    "{quoted_column} BETWEEN ${bind_index} AND ${}",
+                    bind_index + 1
+                ));
+                binds.push(filter.value.clone());
+                binds.push(value_to);
+                bind_index += 2;
+            }
+            FilterOperator::FullText => {
+                ensure_text_value(&filter.column, &filter.value)?;
+                if filter.value_to.is_some() {
+                    return Err(QueryBuilderError::UnexpectedSecondaryFilterValue(
+                        filter.column.clone(),
+                    ));
+                }
+                predicates.push(format!(
+                    "to_tsvector('simple', coalesce({quoted_column}::text, '')) @@ plainto_tsquery('simple', ${bind_index})"
+                ));
+                binds.push(filter.value.clone());
+                bind_index += 1;
+            }
+            FilterOperator::Like | FilterOperator::ILike => {
+                ensure_text_value(&filter.column, &filter.value)?;
+                if filter.value_to.is_some() {
+                    return Err(QueryBuilderError::UnexpectedSecondaryFilterValue(
+                        filter.column.clone(),
+                    ));
+                }
+                predicates.push(format!(
+                    "{quoted_column} {} ${bind_index}",
+                    filter.operator.sql()
+                ));
+                binds.push(filter.value.clone());
+                bind_index += 1;
+            }
+            _ => {
+                if filter.value_to.is_some() {
+                    return Err(QueryBuilderError::UnexpectedSecondaryFilterValue(
+                        filter.column.clone(),
+                    ));
+                }
+                predicates.push(format!(
+                    "{quoted_column} {} ${bind_index}",
+                    filter.operator.sql()
+                ));
+                binds.push(filter.value.clone());
+                bind_index += 1;
+            }
+        }
     }
     Ok((predicates.join(" AND "), binds))
+}
+
+fn ensure_text_value(column: &str, value: &BindValue) -> Result<(), QueryBuilderError> {
+    if matches!(value, BindValue::Text(_)) {
+        Ok(())
+    } else {
+        Err(QueryBuilderError::InvalidTextFilterValue(
+            column.to_string(),
+        ))
+    }
 }
 
 fn query_complexity(primary_terms: usize, secondary_terms: usize) -> u32 {
@@ -303,6 +392,7 @@ mod tests {
             "users".to_string(),
             TableConfig {
                 columns: vec!["id".into(), "email".into(), "active".into()],
+                filter_operators: HashMap::new(),
             },
         );
         Policy::new(PolicyConfig {
@@ -323,6 +413,7 @@ mod tests {
                 column: "active".into(),
                 operator: FilterOperator::Equals,
                 value: BindValue::Boolean(true),
+                value_to: None,
             }],
             limit: Some(10),
         };
@@ -410,6 +501,7 @@ mod tests {
             "users".to_string(),
             TableConfig {
                 columns: vec!["id".into(), "email".into(), "active".into()],
+                filter_operators: HashMap::new(),
             },
         );
         let policy = Policy::new(PolicyConfig {
@@ -426,6 +518,7 @@ mod tests {
                 column: "active".into(),
                 operator: FilterOperator::Equals,
                 value: BindValue::Boolean(true),
+                value_to: None,
             }],
             limit: Some(1),
         };
@@ -478,6 +571,7 @@ mod tests {
                 column: "active".into(),
                 operator: FilterOperator::Equals,
                 value: BindValue::Boolean(true),
+                value_to: None,
             }],
         };
 
@@ -595,5 +689,114 @@ mod tests {
                 PolicyError::ColumnNotAllowed { .. }
             ))
         ));
+    }
+
+    #[test]
+    fn builds_between_filter_with_two_binds() {
+        let request = SelectRequest {
+            table: "users".into(),
+            columns: vec!["id".into(), "email".into()],
+            filters: vec![Filter {
+                column: "id".into(),
+                operator: FilterOperator::Between,
+                value: BindValue::Integer(10),
+                value_to: Some(BindValue::Integer(20)),
+            }],
+            limit: Some(3),
+        };
+
+        let plan = request.build(&users_policy()).expect("valid query plan");
+        assert_eq!(
+            plan.sql,
+            "SELECT \"id\", \"email\" FROM \"users\" WHERE \"id\" BETWEEN $1 AND $2 LIMIT $3"
+        );
+        assert_eq!(
+            plan.binds,
+            vec![
+                BindValue::Integer(10),
+                BindValue::Integer(20),
+                BindValue::Integer(3)
+            ]
+        );
+    }
+
+    #[test]
+    fn builds_full_text_filter_with_parameterized_tsquery() {
+        let request = SelectRequest {
+            table: "users".into(),
+            columns: vec!["id".into(), "email".into()],
+            filters: vec![Filter {
+                column: "email".into(),
+                operator: FilterOperator::FullText,
+                value: BindValue::Text("alice bob".into()),
+                value_to: None,
+            }],
+            limit: Some(3),
+        };
+
+        let plan = request.build(&users_policy()).expect("valid query plan");
+        assert_eq!(
+            plan.sql,
+            "SELECT \"id\", \"email\" FROM \"users\" WHERE to_tsvector('simple', coalesce(\"email\"::text, '')) @@ plainto_tsquery('simple', $1) LIMIT $2"
+        );
+        assert_eq!(
+            plan.binds,
+            vec![BindValue::Text("alice bob".into()), BindValue::Integer(3)]
+        );
+    }
+
+    #[test]
+    fn rejects_between_without_secondary_value() {
+        let request = SelectRequest {
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: vec![Filter {
+                column: "id".into(),
+                operator: FilterOperator::Between,
+                value: BindValue::Integer(10),
+                value_to: None,
+            }],
+            limit: Some(1),
+        };
+
+        assert_eq!(
+            request.build(&users_policy()),
+            Err(QueryBuilderError::MissingSecondaryFilterValue("id".into()))
+        );
+    }
+
+    #[test]
+    fn rejects_non_text_value_for_like_or_full_text() {
+        let like_request = SelectRequest {
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: vec![Filter {
+                column: "email".into(),
+                operator: FilterOperator::Like,
+                value: BindValue::Integer(10),
+                value_to: None,
+            }],
+            limit: Some(1),
+        };
+        assert_eq!(
+            like_request.build(&users_policy()),
+            Err(QueryBuilderError::InvalidTextFilterValue("email".into()))
+        );
+
+        let full_text_request = SelectRequest {
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: vec![Filter {
+                column: "email".into(),
+                operator: FilterOperator::FullText,
+                value: BindValue::Boolean(true),
+                value_to: None,
+            }],
+            limit: Some(1),
+        };
+        assert_eq!(
+            full_text_request.build(&users_policy()),
+            Err(QueryBuilderError::InvalidTextFilterValue("email".into()))
+        );
     }
 }

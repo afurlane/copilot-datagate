@@ -32,6 +32,8 @@ pub struct SelectToolFilter {
     pub column: String,
     pub operator: SelectToolOperator,
     pub value: Value,
+    #[serde(default)]
+    pub value_to: Option<Value>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -45,6 +47,8 @@ pub enum SelectToolOperator {
     GreaterThanOrEqual,
     Like,
     ILike,
+    Between,
+    FullText,
 }
 
 #[derive(Debug, PartialEq)]
@@ -325,10 +329,12 @@ fn convert_filters(filters: Vec<SelectToolFilter>) -> Result<Vec<Filter>, Public
     filters
         .into_iter()
         .map(|filter| {
+            let value_to = filter.value_to.map(bind_value).transpose()?;
             Ok(Filter {
                 column: filter.column,
                 operator: filter.operator.into(),
                 value: bind_value(filter.value)?,
+                value_to,
             })
         })
         .collect()
@@ -532,7 +538,10 @@ fn public_error_for_query(error: QueryBuilderError) -> PublicError {
         QueryBuilderError::InvalidIdentifier(_)
         | QueryBuilderError::EmptyColumns
         | QueryBuilderError::EmptySearchColumns
-        | QueryBuilderError::EmptyAggregates => PublicError::invalid_request(),
+        | QueryBuilderError::EmptyAggregates
+        | QueryBuilderError::MissingSecondaryFilterValue(_)
+        | QueryBuilderError::UnexpectedSecondaryFilterValue(_)
+        | QueryBuilderError::InvalidTextFilterValue(_) => PublicError::invalid_request(),
     }
 }
 
@@ -547,6 +556,8 @@ impl From<SelectToolOperator> for FilterOperator {
             SelectToolOperator::GreaterThanOrEqual => Self::GreaterThanOrEqual,
             SelectToolOperator::Like => Self::Like,
             SelectToolOperator::ILike => Self::ILike,
+            SelectToolOperator::Between => Self::Between,
+            SelectToolOperator::FullText => Self::FullText,
         }
     }
 }
@@ -581,6 +592,7 @@ mod tests {
             "users".into(),
             TableConfig {
                 columns: vec!["id".into(), "email".into(), "active".into()],
+                filter_operators: HashMap::new(),
             },
         );
         Policy::new(PolicyConfig {
@@ -602,6 +614,7 @@ mod tests {
                 column: "active".into(),
                 operator: SelectToolOperator::Equals,
                 value: Value::Bool(true),
+                value_to: None,
             }],
             limit: Some(10),
         };
@@ -645,6 +658,7 @@ mod tests {
                 column: "active".into(),
                 operator: SelectToolOperator::Equals,
                 value: serde_json::json!({"unexpected": "object"}),
+                value_to: None,
             }],
             limit: Some(1),
         };
@@ -681,6 +695,7 @@ mod tests {
             "users".into(),
             TableConfig {
                 columns: vec!["id".into(), "email".into()],
+                filter_operators: HashMap::new(),
             },
         );
         let strict_policy = Policy::new(PolicyConfig {
@@ -745,6 +760,7 @@ mod tests {
                 column: "active".into(),
                 operator: SelectToolOperator::Equals,
                 value: Value::Bool(true),
+                value_to: None,
             }],
         };
 
@@ -822,6 +838,7 @@ mod tests {
             "users".into(),
             TableConfig {
                 columns: vec!["id".into(), "email".into()],
+                filter_operators: HashMap::new(),
             },
         );
         let strict_policy = Policy::new(PolicyConfig {
@@ -1019,6 +1036,75 @@ mod tests {
         assert_eq!(
             FilterOperator::from(SelectToolOperator::ILike),
             FilterOperator::ILike
+        );
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::Between),
+            FilterOperator::Between
+        );
+        assert_eq!(
+            FilterOperator::from(SelectToolOperator::FullText),
+            FilterOperator::FullText
+        );
+    }
+
+    #[tokio::test]
+    async fn prepares_select_with_between_filter() {
+        let request = SelectToolRequest {
+            request_id: "request-between".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: vec![SelectToolFilter {
+                column: "id".into(),
+                operator: SelectToolOperator::Between,
+                value: serde_json::json!(10),
+                value_to: Some(serde_json::json!(20)),
+            }],
+            limit: Some(5),
+        };
+
+        let prepared = SelectTool::new(&policy(), None)
+            .prepare(request)
+            .await
+            .expect("valid between request");
+        assert_eq!(
+            prepared.plan.sql,
+            "SELECT \"id\" FROM \"users\" WHERE \"id\" BETWEEN $1 AND $2 LIMIT $3"
+        );
+        assert_eq!(
+            prepared.plan.binds,
+            vec![
+                BindValue::Integer(10),
+                BindValue::Integer(20),
+                BindValue::Integer(5)
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn prepares_select_with_full_text_filter() {
+        let request = SelectToolRequest {
+            request_id: "request-full-text".into(),
+            table: "users".into(),
+            columns: vec!["id".into()],
+            filters: vec![SelectToolFilter {
+                column: "email".into(),
+                operator: SelectToolOperator::FullText,
+                value: serde_json::json!("alice"),
+                value_to: None,
+            }],
+            limit: Some(5),
+        };
+
+        let prepared = SelectTool::new(&policy(), None)
+            .prepare(request)
+            .await
+            .expect("valid full text request");
+        assert!(prepared.plan.sql.contains(
+            "to_tsvector('simple', coalesce(\"email\"::text, '')) @@ plainto_tsquery('simple', $1)"
+        ));
+        assert_eq!(
+            prepared.plan.binds,
+            vec![BindValue::Text("alice".into()), BindValue::Integer(5)]
         );
     }
 

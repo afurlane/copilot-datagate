@@ -3,7 +3,7 @@
 
 use thiserror::Error;
 
-use crate::config::PolicyConfig;
+use crate::config::{FilterOperatorConfig, PolicyConfig};
 
 // Not yet raised by production code paths until the query builder calls Policy (v0.1).
 #[allow(dead_code)]
@@ -13,6 +13,12 @@ pub enum PolicyError {
     TableNotAllowed(String),
     #[error("column `{column}` is not allowed on table `{table}`")]
     ColumnNotAllowed { table: String, column: String },
+    #[error("operator is not allowed on `{table}.{column}`")]
+    FilterOperatorNotAllowed {
+        table: String,
+        column: String,
+        operator: FilterOperatorConfig,
+    },
     #[error("requested row limit {requested} exceeds policy maximum {max}")]
     RowLimitExceeded { requested: u32, max: u32 },
     #[error("query complexity {requested} exceeds policy maximum {max}")]
@@ -56,6 +62,29 @@ impl Policy {
                 table: table.to_string(),
                 column: column.to_string(),
             })
+        }
+    }
+
+    /// Rejects unsupported filter operators when a table defines explicit
+    /// per-column operator constraints. If no constraints are present for the
+    /// column, all operators remain allowed for backward compatibility.
+    pub fn check_filter_operator(
+        &self,
+        table: &str,
+        column: &str,
+        operator: FilterOperatorConfig,
+    ) -> Result<(), PolicyError> {
+        self.check_column(table, column)?;
+        let table_config = &self.config.tables[table];
+        match table_config.filter_operators.get(column) {
+            Some(allowed) if !allowed.contains(&operator) => {
+                Err(PolicyError::FilterOperatorNotAllowed {
+                    table: table.to_string(),
+                    column: column.to_string(),
+                    operator,
+                })
+            }
+            _ => Ok(()),
         }
     }
 
@@ -109,6 +138,7 @@ mod tests {
             "users".to_string(),
             TableConfig {
                 columns: vec!["id".to_string(), "email".to_string()],
+                filter_operators: HashMap::new(),
             },
         );
         Policy::new(PolicyConfig {
@@ -220,6 +250,49 @@ mod tests {
             PolicyError::OutputLimitExceeded {
                 requested: 10_001,
                 max: 10_000,
+            }
+        );
+    }
+
+    #[test]
+    fn allows_filter_operator_when_no_constraints_are_configured() {
+        assert!(policy_with_users_id_email()
+            .check_filter_operator("users", "email", FilterOperatorConfig::FullText)
+            .is_ok());
+    }
+
+    #[test]
+    fn denies_filter_operator_when_not_in_column_allowlist() {
+        let mut tables = HashMap::new();
+        let mut filter_operators = HashMap::new();
+        filter_operators.insert(
+            "email".to_string(),
+            vec![FilterOperatorConfig::Like, FilterOperatorConfig::ILike],
+        );
+        tables.insert(
+            "users".to_string(),
+            TableConfig {
+                columns: vec!["id".to_string(), "email".to_string()],
+                filter_operators,
+            },
+        );
+        let policy = Policy::new(PolicyConfig {
+            tables,
+            default_row_limit: 50,
+            max_row_limit: 200,
+            max_query_complexity: 100,
+            max_output_bytes: 10_000,
+        });
+
+        let err = policy
+            .check_filter_operator("users", "email", FilterOperatorConfig::FullText)
+            .unwrap_err();
+        assert_eq!(
+            err,
+            PolicyError::FilterOperatorNotAllowed {
+                table: "users".to_string(),
+                column: "email".to_string(),
+                operator: FilterOperatorConfig::FullText,
             }
         );
     }

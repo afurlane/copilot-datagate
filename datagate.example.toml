@@ -24,5 +24,16 @@ max_output_bytes = 131072
 [profiles.dev.policy.tables.users]
 columns = ["id", "email", "created_at"]
 
+[profiles.dev.policy.tables.users.filter_operators]
+id = ["equals", "not_equals", "greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal", "between"]
+email = ["equals", "not_equals", "like", "ilike", "full_text"]
+created_at = ["equals", "greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal", "between"]
+
 [profiles.dev.policy.tables.orders]
 columns = ["id", "user_id", "total", "status"]
+
+[profiles.dev.policy.tables.orders.filter_operators]
+id = ["equals", "between"]
+user_id = ["equals", "between"]
+total = ["equals", "greater_than", "greater_than_or_equal", "less_than", "less_than_or_equal", "between"]
+status = ["equals", "not_equals", "like", "ilike", "full_text"]
