@@ -7,6 +7,7 @@ use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
 use sqlx::{Column, Row, TypeInfo};
 use thiserror::Error;
 
+use crate::backend::{BackendError, ReadOnlyBackend, SelectResult};
 use crate::config::PostgresConfig;
 use crate::metrics::PoolMetrics;
 use crate::query::{BindValue, QueryPlan};
@@ -110,12 +111,6 @@ impl PostgresBackend {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct SelectResult {
-    pub columns: Vec<String>,
-    pub rows: Vec<Value>,
-}
-
 fn row_to_json(row: PgRow) -> Result<Value, PostgresBackendError> {
     let mut object = Map::new();
     for column in row.columns() {
@@ -150,6 +145,25 @@ fn row_to_json(row: PgRow) -> Result<Value, PostgresBackendError> {
         object.insert(name, value);
     }
     Ok(Value::Object(object))
+}
+
+impl ReadOnlyBackend for PostgresBackend {
+    fn execute_select<'a>(
+        &'a self,
+        plan: &'a QueryPlan,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<SelectResult, BackendError>> + Send + 'a>,
+    > {
+        Box::pin(async move {
+            PostgresBackend::execute_select(self, plan)
+                .await
+                .map_err(BackendError::from)
+        })
+    }
+
+    fn pool_metrics(&self) -> PoolMetrics {
+        PostgresBackend::pool_metrics(self)
+    }
 }
 
 fn json_or_null<T>(value: Option<T>) -> Value

@@ -29,7 +29,7 @@
 - [x] Supporto multi-schema
 
 ## 🔵 Versione 0.4 — Multi-Database
-- [ ] Backend astratto
+- [x] Backend astratto
 - [ ] Supporto SQLite
 - [ ] Supporto MySQL/MariaDB
 - [ ] Configurazione multi-database

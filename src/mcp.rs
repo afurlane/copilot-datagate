@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::audit::{AuditEvent, AuditLogger, AuditOutcome};
-use crate::backend::postgres::{PostgresBackend, SelectResult};
+use crate::backend::{ReadOnlyBackend, SelectResult};
 use crate::error::PublicError;
 use crate::metrics::MetricsRegistry;
 use crate::policy::Policy;
@@ -170,7 +170,7 @@ impl<'a> SelectTool<'a> {
     /// Executes a prepared select through the read-only backend and returns rows only.
     pub async fn execute(
         &self,
-        backend: &PostgresBackend,
+        backend: &impl ReadOnlyBackend,
         request: SelectToolRequest,
     ) -> Result<SelectToolResponse, PublicError> {
         self.runtime
@@ -239,7 +239,7 @@ impl<'a> SearchTool<'a> {
 
     pub async fn execute(
         &self,
-        backend: &PostgresBackend,
+        backend: &impl ReadOnlyBackend,
         request: SearchToolRequest,
     ) -> Result<SearchToolResponse, PublicError> {
         self.runtime
@@ -310,7 +310,7 @@ impl<'a> AggregateTool<'a> {
 
     pub async fn execute(
         &self,
-        backend: &PostgresBackend,
+        backend: &impl ReadOnlyBackend,
         request: AggregateToolRequest,
     ) -> Result<AggregateToolResponse, PublicError> {
         self.runtime
@@ -441,7 +441,7 @@ impl<'a> ToolRuntime<'a> {
 
     async fn execute<P, T, Prepare, Split, BuildResponse, CheckOutput>(
         &self,
-        backend: &PostgresBackend,
+        backend: &impl ReadOnlyBackend,
         prepare: Prepare,
         split: Split,
         build_response: BuildResponse,
@@ -500,7 +500,7 @@ impl<'a> ToolRuntime<'a> {
         }
     }
 
-    fn record_pool_metrics(&self, backend: &PostgresBackend) {
+    fn record_pool_metrics(&self, backend: &impl ReadOnlyBackend) {
         if let Some(metrics) = self.metrics {
             metrics.set_pool_metrics(backend.pool_metrics());
         }

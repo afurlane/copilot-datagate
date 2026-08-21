@@ -19,6 +19,7 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 - **Concorrenza reale** — architettura asincrona e sicura, ideale per richieste parallele da Copilot.
 - **Metriche e audit** — tracciamento di richieste, tempi, errori e limiti per debugging e osservabilità.
 - **Profilazione performance** — profilo latenza in-process (min/media/p50/p95/p99/max) per monitoraggio evolutivo delle performance.
+- **Backend astratto** — trait read-only comune per backend database, con PostgreSQL come prima implementazione concreta.
 
 ## 🧩 Funzionalità principali
 
