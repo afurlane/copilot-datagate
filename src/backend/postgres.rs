@@ -82,7 +82,10 @@ impl PostgresBackend {
         &self,
         plan: &QueryPlan,
     ) -> Result<SelectResult, PostgresBackendError> {
-        let query = crate::backend::bind_query_values!(sqlx::query(&plan.sql), &plan.binds);
+        let query = crate::backend::bind_query_values!(
+            sqlx::query(sqlx::AssertSqlSafe(plan.sql.as_str())),
+            &plan.binds
+        );
 
         let rows = query
             .fetch_all(&self.pool)
