@@ -20,10 +20,12 @@ use audit::{AuditEvent, AuditLogger};
 use backend::mysql::MySqlBackend;
 use backend::postgres::PostgresBackend;
 use backend::sqlite::SqliteBackend;
+use backend::ReadOnlyBackend;
 use config::{BackendSelector, Config};
 use metrics::MetricsRegistry;
 use policy::Policy;
 use rate_limit::RateLimiter;
+use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,12 +89,7 @@ async fn main() -> anyhow::Result<()> {
 
     let backend_selector = BackendSelector::from_env()?;
     if std::env::var("DATAGATE_MCP_STDIO").ok().as_deref() == Some("1") {
-        if backend_selector != BackendSelector::Sqlite {
-            anyhow::bail!("DATAGATE_MCP_STDIO=1 currently requires DATAGATE_BACKEND=sqlite");
-        }
-        let path = std::env::var("SQLITE_PATH")
-            .map_err(|_| anyhow::anyhow!("DATAGATE_MCP_STDIO=1 requires SQLITE_PATH"))?;
-        let backend = mcp_transport::connect_sqlite(path).await?;
+        let backend = initialize_mcp_backend(backend_selector).await?;
         return mcp_transport::serve_stdio(mcp_transport::McpServer::new(backend, policy)).await;
     }
     initialize_backend(backend_selector).await?;
@@ -110,14 +107,17 @@ fn init_performance_profile() -> metrics::PerformanceProfile {
 
 fn init_logging(format: Option<&str>, level: Option<&str>) -> anyhow::Result<()> {
     let format = parse_log_format(format);
-    let level = level.unwrap_or("info");
+    let mcp_stdio_mode = std::env::var("DATAGATE_MCP_STDIO").ok().as_deref() == Some("1");
+    let level = level.unwrap_or(if mcp_stdio_mode { "warn" } else { "info" });
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
+    let ansi_enabled = !mcp_stdio_mode;
 
     match format {
         LogFormat::Pretty => tracing_subscriber::fmt()
             .with_env_filter(env_filter)
             .with_target(true)
-            .with_ansi(true)
+            .with_ansi(ansi_enabled)
+            .with_writer(std::io::stderr)
             .try_init()
             .map_err(|err| anyhow::anyhow!(err.to_string())),
         LogFormat::Json => tracing_subscriber::fmt()
@@ -126,6 +126,7 @@ fn init_logging(format: Option<&str>, level: Option<&str>) -> anyhow::Result<()>
             .with_target(true)
             .with_current_span(false)
             .with_span_list(false)
+            .with_writer(std::io::stderr)
             .try_init()
             .map_err(|err| anyhow::anyhow!(err.to_string())),
     }
@@ -193,6 +194,48 @@ async fn initialize_backend(selector: BackendSelector) -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+async fn initialize_mcp_backend(
+    selector: BackendSelector,
+) -> anyhow::Result<Arc<dyn ReadOnlyBackend + Send + Sync>> {
+    match selector {
+        BackendSelector::Auto => {
+            if let Some(postgres_config) = config::PostgresConfig::from_env()? {
+                Ok(Arc::new(PostgresBackend::connect(&postgres_config).await?))
+            } else if let Some(mysql_config) = config::MySqlConfig::from_env()? {
+                Ok(Arc::new(MySqlBackend::connect(&mysql_config).await?))
+            } else if let Some(sqlite_config) = config::SqliteConfig::from_env()? {
+                Ok(Arc::new(SqliteBackend::connect(&sqlite_config).await?))
+            } else {
+                anyhow::bail!("DATAGATE_MCP_STDIO=1 requires database environment configuration");
+            }
+        }
+        BackendSelector::Postgres => {
+            let postgres_config = config::PostgresConfig::from_env()?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "DATAGATE_BACKEND=postgres but no PostgreSQL environment configuration was found"
+                )
+            })?;
+            Ok(Arc::new(PostgresBackend::connect(&postgres_config).await?))
+        }
+        BackendSelector::MySql => {
+            let mysql_config = config::MySqlConfig::from_env()?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "DATAGATE_BACKEND=mysql but no MySQL/MariaDB environment configuration was found"
+                )
+            })?;
+            Ok(Arc::new(MySqlBackend::connect(&mysql_config).await?))
+        }
+        BackendSelector::Sqlite => {
+            let sqlite_config = config::SqliteConfig::from_env()?.ok_or_else(|| {
+                anyhow::anyhow!(
+                    "DATAGATE_BACKEND=sqlite but no SQLite environment configuration was found"
+                )
+            })?;
+            Ok(Arc::new(SqliteBackend::connect(&sqlite_config).await?))
+        }
+    }
 }
 
 async fn initialize_postgres(config: config::PostgresConfig) -> anyhow::Result<()> {

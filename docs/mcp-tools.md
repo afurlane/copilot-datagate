@@ -52,23 +52,83 @@ recreated. A failed file load leaves the currently active policy unchanged.
 
 ## MCP stdio Transport
 
-The binary exposes a real MCP stdio server when configured explicitly:
+The binary exposes a real MCP stdio server when configured explicitly.
+For local usage and VS Code integration, `stdio` is the default transport model.
+
+Current implementation notes:
+
+- The MCP transport in the current bootstrap path is enabled only when
+    `DATAGATE_MCP_STDIO=1`.
+- The stdio bootstrap uses `DATAGATE_BACKEND` and supports `auto`, `postgres`,
+    `mysql`/`mariadb`, and `sqlite` through the shared read-only backend trait.
+- In MCP stdio mode, application logs are written to stderr and default to
+    `warn` level. This keeps stdout reserved for JSON-RPC frames and avoids VS
+    Code showing normal `INFO` startup logs as `[server stderr]` warnings.
+
+Enable stdio transport:
 
 ```bash
 DATAGATE_MCP_STDIO=1 \
-DATAGATE_BACKEND=sqlite \
-SQLITE_PATH=/path/to/database.db \
+DATAGATE_BACKEND=postgres \
+DB_URL=postgresql://reader:password@127.0.0.1:5432/application \
 DATAGATE_CONFIG=/path/to/datagate.toml \
 cargo run
 ```
 
 The transport uses the `rmcp` SDK and exposes `initialize`, `tools/list`, and
 `tools/call` for the policy-safe `select`, `search`, and `aggregate` tools.
-The first transport integration supports SQLite explicitly; PostgreSQL and
-MySQL/MariaDB wiring remains a follow-up in the bootstrap layer.
 
 The transport returns the existing sanitized public error envelope and never
 accepts caller-provided SQL.
+
+## VS Code `mcp.json` Startup Templates
+
+Use one of the following templates depending on the deployment model.
+
+### Template A: Local stdio (supported today)
+
+```json
+{
+    "servers": {
+        "copilot-datagate": {
+            "type": "stdio",
+            "command": "cargo",
+            "args": ["run", "--quiet"],
+            "cwd": "${workspaceFolder}",
+            "env": {
+                "DATAGATE_MCP_STDIO": "1",
+                "DATAGATE_CONFIG": "${workspaceFolder}/datagate.toml",
+                "DATAGATE_BACKEND": "postgres",
+                "DB_URL": "postgresql://reader:password@127.0.0.1:5432/application",
+                "DB_OPTIONS": "application_name=datagate&search_path=public",
+                "DB_MAX_CONNECTIONS": "10",
+                "DB_ACQUIRE_TIMEOUT_SECS": "10"
+            }
+        }
+    }
+}
+```
+
+### Template B: Remote HTTP (planned)
+
+This template becomes valid when HTTP transport is implemented.
+
+```json
+{
+    "servers": {
+        "copilot-datagate-remote": {
+            "type": "http",
+            "url": "https://datagate.example.com/mcp",
+            "headers": {
+                "Authorization": "Bearer ${input:datagateToken}"
+            }
+        }
+    }
+}
+```
+
+When HTTP transport lands, both templates can coexist so local and remote
+servers can be used in parallel.
 
 The transport test suite also runs a real `rmcp` client against the server over
 an in-memory duplex stream. It verifies tool discovery, a `select` call, and a

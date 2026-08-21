@@ -7,9 +7,13 @@ use rmcp::{
     tool, tool_handler, tool_router, ServerHandler, ServiceExt,
 };
 use serde_json::Value;
+#[cfg(test)]
 use sqlx::sqlite::SqliteConnectOptions;
 
+#[cfg(test)]
 use crate::backend::sqlite::SqliteBackend;
+use crate::backend::ReadOnlyBackend;
+#[cfg(test)]
 use crate::config::SqliteConfig;
 use crate::mcp::{
     AggregateTool, AggregateToolRequest, SearchTool, SearchToolRequest, SelectTool,
@@ -19,7 +23,7 @@ use crate::policy::Policy;
 
 #[derive(Clone)]
 pub struct McpServer {
-    backend: Arc<SqliteBackend>,
+    backend: Arc<dyn ReadOnlyBackend + Send + Sync>,
     policy: Policy,
     tool_router: ToolRouter<Self>,
 }
@@ -29,7 +33,7 @@ impl ServerHandler for McpServer {}
 
 #[tool_router(router = tool_router)]
 impl McpServer {
-    pub fn new(backend: Arc<SqliteBackend>, policy: Policy) -> Self {
+    pub fn new(backend: Arc<dyn ReadOnlyBackend + Send + Sync>, policy: Policy) -> Self {
         Self {
             backend,
             policy,
@@ -87,6 +91,7 @@ fn execute_json<T: serde::Serialize>(result: Result<T, crate::error::PublicError
     })
 }
 
+#[cfg(test)]
 pub async fn connect_sqlite(path: String) -> anyhow::Result<Arc<SqliteBackend>> {
     let config = SqliteConfig {
         connect_options: SqliteConnectOptions::new()
