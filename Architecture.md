@@ -163,7 +163,9 @@ Supporta diversi database dell'applicazione: PostgreSQL (oggi), altri DB domani.
 Ogni backend implementa: connessione, read-only, schema loader, query execution.
 
 ## 8) Configuration Layer
-File di configurazione per policy, limiti e profili (dev/staging/prod). Le credenziali
+File di configurazione per policy, limiti e profili (dev/staging/prod). La policy attiva
+può essere ricaricata atomicamente da TOML tramite l'handle condiviso, senza ricreare i
+tool MCP; se il caricamento fallisce, la policy precedente resta attiva. Le credenziali
 non sono file-managed: PostgreSQL legge `DB_URL` oppure `DB_HOST`, `DB_PORT`, `DB_USER`,
 `DB_PASSWORD`, `DB_NAME` e `DB_OPTIONS` dall'ambiente runtime. `DB_URL` ha precedenza
 sui componenti. Il password value non viene mai scritto nei log o nei file del repo.

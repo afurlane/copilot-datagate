@@ -39,7 +39,7 @@
 - [x] Logging strutturato
 - [x] Profilazione performance
 - [x] Hardening sicurezza
-- [ ] Policy engine dinamico
+- [x] Policy engine dinamico
 - [ ] Documentazione completa
 - [ ] Versione 1.0 candidate
 
