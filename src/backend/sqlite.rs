@@ -7,10 +7,12 @@ use sqlx::sqlite::{SqlitePool, SqlitePoolOptions, SqliteRow};
 use sqlx::{Column, Row, TypeInfo};
 use thiserror::Error;
 
-use crate::backend::{BackendError, ReadOnlyBackend, SelectResult};
+use crate::backend::{
+    columns_from_rows, json_or_null, BackendError, ReadOnlyBackend, SelectResult,
+};
 use crate::config::SqliteConfig;
 use crate::metrics::PoolMetrics;
-use crate::query::{BindValue, QueryPlan};
+use crate::query::QueryPlan;
 
 #[derive(Debug, Error)]
 pub enum SqliteBackendError {
@@ -63,29 +65,13 @@ impl SqliteBackend {
         &self,
         plan: &QueryPlan,
     ) -> Result<SelectResult, SqliteBackendError> {
-        let mut query = sqlx::query(&plan.sql);
-        for bind in &plan.binds {
-            query = match bind {
-                BindValue::Text(value) => query.bind(value),
-                BindValue::Integer(value) => query.bind(value),
-                BindValue::Decimal(value) => query.bind(value),
-                BindValue::Boolean(value) => query.bind(value),
-            };
-        }
+        let query = crate::backend::bind_query_values!(sqlx::query(&plan.sql), &plan.binds);
 
         let rows = query
             .fetch_all(&self.pool)
             .await
             .map_err(SqliteBackendError::Execute)?;
-        let columns = rows
-            .first()
-            .map(|row| {
-                row.columns()
-                    .iter()
-                    .map(|column| column.name().to_string())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let columns = columns_from_rows(&rows);
         let rows = rows
             .into_iter()
             .map(row_to_json)
@@ -140,13 +126,6 @@ impl ReadOnlyBackend for SqliteBackend {
     }
 }
 
-fn json_or_null<T>(value: Option<T>) -> Value
-where
-    T: Into<Value>,
-{
-    value.map_or(Value::Null, Into::into)
-}
-
 fn encode_hex(bytes: Vec<u8>) -> String {
     const HEX: &[u8; 16] = b"0123456789abcdef";
     let mut out = String::with_capacity(bytes.len() * 2);
@@ -160,6 +139,11 @@ fn encode_hex(bytes: Vec<u8>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use crate::query::BindValue;
+    use sqlx::ConnectOptions;
 
     #[tokio::test]
     async fn rejects_zero_acquire_timeout_without_attempting_to_connect() {
@@ -187,5 +171,130 @@ mod tests {
             result,
             Err(SqliteBackendError::InvalidConfiguration)
         ));
+    }
+
+    #[tokio::test]
+    async fn executes_parameterized_select_and_serializes_blob_as_hex() {
+        let db_path = temp_db_path();
+
+        let setup_options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&db_path)
+            .create_if_missing(true)
+            .read_only(false)
+            .disable_statement_logging();
+        let setup_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(setup_options)
+            .await
+            .expect("sqlite setup pool");
+
+        sqlx::query(
+            "CREATE TABLE metrics (id INTEGER PRIMARY KEY, name TEXT, score REAL, payload BLOB)",
+        )
+        .execute(&setup_pool)
+        .await
+        .expect("create table");
+        sqlx::query("INSERT INTO metrics (id, name, score, payload) VALUES (?, ?, ?, ?)")
+            .bind(1_i64)
+            .bind("alpha")
+            .bind(12.5_f64)
+            .bind(vec![0x0a_u8, 0x0b_u8])
+            .execute(&setup_pool)
+            .await
+            .expect("insert row");
+        drop(setup_pool);
+
+        let config = SqliteConfig {
+            connect_options: sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(&db_path)
+                .read_only(true)
+                .create_if_missing(false)
+                .disable_statement_logging(),
+            max_connections: 1,
+            acquire_timeout_secs: 2,
+        };
+        let backend = SqliteBackend::connect(&config)
+            .await
+            .expect("read-only backend");
+
+        let result = backend
+            .execute_select(&QueryPlan {
+                sql: "SELECT id, name, score, payload FROM metrics WHERE id = ?".to_string(),
+                binds: vec![BindValue::Integer(1)],
+            })
+            .await
+            .expect("select from sqlite");
+
+        assert_eq!(result.columns, vec!["id", "name", "score", "payload"]);
+        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.rows[0]["id"], serde_json::json!(1));
+        assert_eq!(result.rows[0]["name"], serde_json::json!("alpha"));
+        assert_eq!(result.rows[0]["score"], serde_json::json!(12.5));
+        assert_eq!(result.rows[0]["payload"], serde_json::json!("0a0b"));
+
+        drop(backend);
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[tokio::test]
+    async fn read_only_connection_rejects_write_statements() {
+        let db_path = temp_db_path();
+
+        let setup_options = sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&db_path)
+            .create_if_missing(true)
+            .read_only(false)
+            .disable_statement_logging();
+        let setup_pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(setup_options)
+            .await
+            .expect("sqlite setup pool");
+        sqlx::query("CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT)")
+            .execute(&setup_pool)
+            .await
+            .expect("create table");
+        drop(setup_pool);
+
+        let config = SqliteConfig {
+            connect_options: sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(&db_path)
+                .read_only(true)
+                .create_if_missing(false)
+                .disable_statement_logging(),
+            max_connections: 1,
+            acquire_timeout_secs: 2,
+        };
+        let backend = SqliteBackend::connect(&config)
+            .await
+            .expect("read-only backend");
+
+        let result = backend
+            .execute_select(&QueryPlan {
+                sql: "INSERT INTO t (name) VALUES ('blocked')".to_string(),
+                binds: vec![],
+            })
+            .await;
+        assert!(matches!(result, Err(SqliteBackendError::Execute(_))));
+
+        drop(backend);
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[test]
+    fn encode_hex_uses_lowercase_pairs() {
+        assert_eq!(encode_hex(vec![0x00, 0x1f, 0xa0, 0xff]), "001fa0ff");
+    }
+
+    fn temp_db_path() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "copilot-datagate-sqlite-{}-{}.db",
+            std::process::id(),
+            nanos
+        ))
     }
 }

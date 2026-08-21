@@ -7,10 +7,12 @@ use sqlx::postgres::{PgPool, PgPoolOptions, PgRow};
 use sqlx::{Column, Row, TypeInfo};
 use thiserror::Error;
 
-use crate::backend::{BackendError, ReadOnlyBackend, SelectResult};
+use crate::backend::{
+    columns_from_rows, json_or_null, BackendError, ReadOnlyBackend, SelectResult,
+};
 use crate::config::PostgresConfig;
 use crate::metrics::PoolMetrics;
-use crate::query::{BindValue, QueryPlan};
+use crate::query::QueryPlan;
 use crate::schema::{SchemaCatalog, SchemaLoaderError};
 
 #[derive(Debug, Error)]
@@ -80,29 +82,13 @@ impl PostgresBackend {
         &self,
         plan: &QueryPlan,
     ) -> Result<SelectResult, PostgresBackendError> {
-        let mut query = sqlx::query(&plan.sql);
-        for bind in &plan.binds {
-            query = match bind {
-                BindValue::Text(value) => query.bind(value),
-                BindValue::Integer(value) => query.bind(value),
-                BindValue::Decimal(value) => query.bind(value),
-                BindValue::Boolean(value) => query.bind(value),
-            };
-        }
+        let query = crate::backend::bind_query_values!(sqlx::query(&plan.sql), &plan.binds);
 
         let rows = query
             .fetch_all(&self.pool)
             .await
             .map_err(PostgresBackendError::Execute)?;
-        let columns = rows
-            .first()
-            .map(|row| {
-                row.columns()
-                    .iter()
-                    .map(|column| column.name().to_string())
-                    .collect()
-            })
-            .unwrap_or_default();
+        let columns = columns_from_rows(&rows);
         let rows = rows
             .into_iter()
             .map(row_to_json)
@@ -164,13 +150,6 @@ impl ReadOnlyBackend for PostgresBackend {
     fn pool_metrics(&self) -> PoolMetrics {
         PostgresBackend::pool_metrics(self)
     }
-}
-
-fn json_or_null<T>(value: Option<T>) -> Value
-where
-    T: Into<Value>,
-{
-    value.map_or(Value::Null, Into::into)
 }
 
 #[cfg(test)]
