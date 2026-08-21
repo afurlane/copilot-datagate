@@ -30,7 +30,7 @@
 
 ## 🔵 Versione 0.4 — Multi-Database
 - [x] Backend astratto
-- [ ] Supporto SQLite
+- [x] Supporto SQLite
 - [ ] Supporto MySQL/MariaDB
 - [ ] Configurazione multi-database
 - [ ] Test di integrazione multi-backend

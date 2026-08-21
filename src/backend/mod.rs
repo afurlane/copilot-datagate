@@ -10,11 +10,14 @@ use crate::metrics::PoolMetrics;
 use crate::query::QueryPlan;
 
 pub mod postgres;
+pub mod sqlite;
 
 #[derive(Debug, Error)]
 pub enum BackendError {
     #[error("PostgreSQL backend failed")]
     Postgres(#[from] postgres::PostgresBackendError),
+    #[error("SQLite backend failed")]
+    Sqlite(#[from] sqlite::SqliteBackendError),
 }
 
 #[derive(Debug, Clone, PartialEq)]

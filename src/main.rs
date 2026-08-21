@@ -17,6 +17,7 @@ mod schema;
 
 use audit::{AuditEvent, AuditLogger};
 use backend::postgres::PostgresBackend;
+use backend::sqlite::SqliteBackend;
 use config::Config;
 use metrics::MetricsRegistry;
 use policy::Policy;
@@ -96,6 +97,9 @@ async fn main() -> anyhow::Result<()> {
             sequences = schema.sequences.len(),
             "database schema loaded"
         );
+    } else if let Some(sqlite_config) = config::SqliteConfig::from_env()? {
+        let _sqlite_backend = SqliteBackend::connect(&sqlite_config).await?;
+        tracing::info!("SQLite read-only connection established");
     }
 
     Ok(())

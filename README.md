@@ -19,7 +19,7 @@ DataGate funge da **intermediario** tra un LLM e una base dati reale: non permet
 - **Concorrenza reale** — architettura asincrona e sicura, ideale per richieste parallele da Copilot.
 - **Metriche e audit** — tracciamento di richieste, tempi, errori e limiti per debugging e osservabilità.
 - **Profilazione performance** — profilo latenza in-process (min/media/p50/p95/p99/max) per monitoraggio evolutivo delle performance.
-- **Backend astratto** — trait read-only comune per backend database, con PostgreSQL come prima implementazione concreta.
+- **Backend astratto** — trait read-only comune per backend database, con implementazioni concrete per PostgreSQL e SQLite.
 
 ## 🧩 Funzionalità principali
 
@@ -59,6 +59,21 @@ Il servizio legge la connessione dall'ambiente runtime:
   `DB_PASSWORD`, `DB_NAME`
 - opzioni PostgreSQL: `DB_OPTIONS`, nel formato `key=value&key=value`
 - pool: `DB_MAX_CONNECTIONS` e `DB_ACQUIRE_TIMEOUT_SECS`
+
+### Configurazione SQLite
+
+Per usare SQLite in modalità read-only, configura una delle due varianti:
+
+- URL completo: `SQLITE_URL`
+- path file: `SQLITE_PATH`
+
+Opzioni pool SQLite:
+
+- `SQLITE_MAX_CONNECTIONS`
+- `SQLITE_ACQUIRE_TIMEOUT_SECS`
+
+Se sono presenti sia configurazione PostgreSQL sia SQLite, DataGate usa PostgreSQL
+come backend attivo. SQLite viene usato quando Postgres non è configurato.
 
 Il rate limiting server-side opzionale usa `RATE_LIMIT_REQUESTS` e
 `RATE_LIMIT_WINDOW_SECS`. Il limite è applicato per `request_id` prima di policy,
@@ -101,7 +116,7 @@ deny-all, senza avviare operazioni sul database.
 ## 🔧 Tecnologie
 
 - Linguaggio: **Rust**
-- Database: PostgreSQL (oggi), altri DB domani
+- Database: PostgreSQL e SQLite (oggi), altri DB domani
 - Protocollo: **MCP (Model Context Protocol)**
 - Architettura: asincrona, policy-driven, schema-aware
 
