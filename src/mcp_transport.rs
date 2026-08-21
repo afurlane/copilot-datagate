@@ -115,7 +115,8 @@ mod tests {
     use std::collections::HashMap;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    use rmcp::handler::server::wrapper::Parameters;
+    use rmcp::model::CallToolRequestParams;
+    use rmcp::{handler::server::wrapper::Parameters, ServiceExt};
 
     fn policy() -> Policy {
         let mut tables = HashMap::new();
@@ -217,6 +218,89 @@ mod tests {
         assert!(aggregate.contains("transport-aggregate"));
         assert!(aggregate.contains("total"));
 
+        std::fs::remove_file(path).expect("remove test database");
+    }
+
+    #[tokio::test]
+    async fn serves_real_mcp_client_discovery_and_policy_rejection() {
+        let path = std::env::temp_dir().join(format!(
+            "datagate-mcp-client-{}-{}.db",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("system clock")
+                .as_nanos()
+        ));
+        let setup_pool = sqlx::SqlitePool::connect_with(
+            SqliteConnectOptions::new()
+                .filename(&path)
+                .create_if_missing(true),
+        )
+        .await
+        .expect("setup database");
+        sqlx::query("CREATE TABLE users (id INTEGER)")
+            .execute(&setup_pool)
+            .await
+            .expect("create users table");
+        sqlx::query("INSERT INTO users (id) VALUES (7)")
+            .execute(&setup_pool)
+            .await
+            .expect("insert user");
+        setup_pool.close().await;
+
+        let backend = connect_sqlite(path.to_string_lossy().into_owned())
+            .await
+            .expect("read-only backend");
+        let server = McpServer::new(backend, policy());
+        let (server_transport, client_transport) = tokio::io::duplex(16_384);
+        tokio::spawn(async move {
+            server
+                .serve(server_transport)
+                .await
+                .expect("server should start")
+                .waiting()
+                .await
+                .expect("server should stop cleanly");
+        });
+
+        let client = ().serve(client_transport).await.expect("client should connect");
+        let tools = client
+            .list_tools(Default::default())
+            .await
+            .expect("list tools");
+        let names = tools
+            .tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>();
+        assert_eq!(names, ["aggregate", "search", "select"]);
+
+        let result = client
+            .call_tool(
+                CallToolRequestParams::new("select").with_arguments(
+                    serde_json::json!({
+                        "request_id": "client-select",
+                        "table": "secrets",
+                        "columns": ["id"],
+                        "limit": 1
+                    })
+                    .as_object()
+                    .expect("object arguments")
+                    .clone(),
+                ),
+            )
+            .await
+            .expect("tool call response");
+        let text = result
+            .content
+            .first()
+            .and_then(|content| content.as_text())
+            .expect("text result")
+            .text
+            .clone();
+        assert!(text.contains("policy_denied"));
+
+        client.cancel().await.expect("client should cancel");
         std::fs::remove_file(path).expect("remove test database");
     }
 }
