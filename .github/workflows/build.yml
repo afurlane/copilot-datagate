@@ -174,7 +174,7 @@ jobs:
               -Dsonar.projectKey=copilot-datagate \
               -Dsonar.projectName="DataGate" \
               -Dsonar.sources=src \
-              -Dsonar.coverage.exclusions=src/main.rs,src/backend/postgres.rs,src/backend/mysql.rs,src/schema.rs \
+              -Dsonar.coverage.exclusions=src/main.rs,src/bin/datagate-benchmark.rs,src/backend/postgres.rs,src/backend/mysql.rs,src/schema.rs \
               -Dsonar.cpd.exclusions=src/backend/mysql.rs \
               -Dsonar.issue.ignore.multicriteria=s6697_config,s6697_mysql \
               -Dsonar.issue.ignore.multicriteria.s6697_config.ruleKey=secrets:S6697 \
@@ -193,7 +193,7 @@ jobs:
               -Dsonar.projectKey=copilot-datagate \
               -Dsonar.projectName="DataGate" \
               -Dsonar.sources=src \
-              -Dsonar.coverage.exclusions=src/main.rs,src/backend/postgres.rs,src/backend/mysql.rs,src/schema.rs \
+              -Dsonar.coverage.exclusions=src/main.rs,src/bin/datagate-benchmark.rs,src/backend/postgres.rs,src/backend/mysql.rs,src/schema.rs \
               -Dsonar.cpd.exclusions=src/backend/mysql.rs \
               -Dsonar.issue.ignore.multicriteria=s6697_config,s6697_mysql \
               -Dsonar.issue.ignore.multicriteria.s6697_config.ruleKey=secrets:S6697 \

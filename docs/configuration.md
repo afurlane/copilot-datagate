@@ -17,8 +17,8 @@ cargo run
 ```
 
 The current binary initializes configuration, policy, observability, and the
-selected read-only backend. MCP transport wiring is not included yet; the
-MCP contracts are implemented as typed Rust tool APIs.
+selected read-only backend. MCP stdio transport is available when explicitly
+enabled via environment variables.
 
 ## Backend Selection
 
@@ -97,9 +97,69 @@ is bounded.
 Optional rate limiting uses `RATE_LIMIT_REQUESTS` and
 `RATE_LIMIT_WINDOW_SECS`, keyed by `request_id`. Logging supports
 `LOG_FORMAT=pretty` (default) or `LOG_FORMAT=json`, with `LOG_LEVEL` or
-`RUST_LOG` controlling verbosity. `AUDIT_LOG_PATH` enables JSONL audit events.
+`RUST_LOG` controlling verbosity. In MCP stdio mode, logs are written to stderr
+and default to `warn`, because stdout is reserved for JSON-RPC protocol frames.
+`AUDIT_LOG_PATH` enables JSONL audit events.
+
+## VS Code MCP Startup Templates
+
+For VS Code, use `stdio` as the default transport model for local runs.
+
+### Template A: Local stdio (supported today)
+
+```json
+{
+  "servers": {
+    "copilot-datagate": {
+      "type": "stdio",
+      "command": "cargo",
+      "args": ["run", "--quiet"],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "DATAGATE_MCP_STDIO": "1",
+        "DATAGATE_CONFIG": "${workspaceFolder}/datagate.toml",
+        "DATAGATE_BACKEND": "postgres",
+        "DB_URL": "postgresql://reader:password@127.0.0.1:5432/application",
+        "DB_OPTIONS": "application_name=datagate&search_path=public",
+        "DB_MAX_CONNECTIONS": "10",
+        "DB_ACQUIRE_TIMEOUT_SECS": "10"
+      }
+    }
+  }
+}
+```
+
+### Template B: Remote HTTP (planned)
+
+This template is for the future HTTP transport milestone.
+
+```json
+{
+  "servers": {
+    "copilot-datagate-remote": {
+      "type": "http",
+      "url": "https://datagate.example.com/mcp",
+      "headers": {
+        "Authorization": "Bearer ${input:datagateToken}"
+      }
+    }
+  }
+}
+```
+
+When HTTP support is implemented, local stdio and remote HTTP can be used
+together.
 
 ## Verification
+
+Run local benchmarks with:
+
+```bash
+cargo run --release --bin datagate-benchmark
+```
+
+Details and the latest local PostgreSQL run are documented in
+[benchmarks.md](benchmarks.md).
 
 Run the local quality checks before submitting changes:
 

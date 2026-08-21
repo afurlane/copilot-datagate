@@ -46,9 +46,13 @@
 ## 🔵 Versione 1.0 — Release
 - [x] Stabilità API MCP
 - [x] Transport MCP stdio
+- [x] Transport stdio come default operativo per avvio locale/VS Code
 - [x] Test end-to-end MCP (client rmcp + SQLite)
-- [ ] Benchmark
+- [x] Benchmark
 - [ ] Hardening finale
+- [ ] Transport MCP HTTP per scenari remoti
+- [ ] Selezione transport dual-mode (stdio + HTTP) con configurazione runtime
+- [ ] Pubblicazione MCP Registry e valutazione VS Code MCP Server Gallery
 - [ ] Pubblicazione ufficiale
 
 > Ogni feature nuova deve essere accompagnata da test (unit e, dove applicabile,

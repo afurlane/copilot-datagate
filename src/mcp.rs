@@ -209,7 +209,7 @@ impl<'a> SelectTool<'a> {
     /// Executes a prepared select through the read-only backend and returns rows only.
     pub async fn execute(
         &self,
-        backend: &impl ReadOnlyBackend,
+        backend: &(impl ReadOnlyBackend + ?Sized),
         request: SelectToolRequest,
     ) -> Result<SelectToolResponse, PublicError> {
         self.runtime
@@ -280,7 +280,7 @@ impl<'a> SearchTool<'a> {
 
     pub async fn execute(
         &self,
-        backend: &impl ReadOnlyBackend,
+        backend: &(impl ReadOnlyBackend + ?Sized),
         request: SearchToolRequest,
     ) -> Result<SearchToolResponse, PublicError> {
         self.runtime
@@ -353,7 +353,7 @@ impl<'a> AggregateTool<'a> {
 
     pub async fn execute(
         &self,
-        backend: &impl ReadOnlyBackend,
+        backend: &(impl ReadOnlyBackend + ?Sized),
         request: AggregateToolRequest,
     ) -> Result<AggregateToolResponse, PublicError> {
         self.runtime
@@ -550,7 +550,7 @@ impl<'a> ToolRuntime<'a> {
 
     async fn execute<P, T, Prepare, Split, BuildResponse, CheckOutput>(
         &self,
-        backend: &impl ReadOnlyBackend,
+        backend: &(impl ReadOnlyBackend + ?Sized),
         prepare: Prepare,
         split: Split,
         build_response: BuildResponse,
@@ -609,7 +609,7 @@ impl<'a> ToolRuntime<'a> {
         }
     }
 
-    fn record_pool_metrics(&self, backend: &impl ReadOnlyBackend) {
+    fn record_pool_metrics(&self, backend: &(impl ReadOnlyBackend + ?Sized)) {
         if let Some(metrics) = self.metrics {
             metrics.set_pool_metrics(backend.pool_metrics());
         }

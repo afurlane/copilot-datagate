@@ -178,10 +178,15 @@ Documentazione completa:
 - [Architecture.md](Architecture.md) — design principles e architettura a layer
 - [ROADMAP.md](ROADMAP.md) — roadmap dettagliata verso la 1.0
 - [docs/configuration.md](docs/configuration.md) — quick start, backend, policy e operazioni
+- [docs/benchmarks.md](docs/benchmarks.md) — benchmark locali SQLite e PostgreSQL reale
 - [docs/release-candidate.md](docs/release-candidate.md) — criteri e gate della 1.0 candidate
 - [docs/mcp-tools.md](docs/mcp-tools.md) — contratti interni e regole dei tool MCP
 - [CONTRIBUTING.md](CONTRIBUTING.md) — regole di contribuzione, commit e branch
 - [SECURITY.md](SECURITY.md) — policy di sicurezza e segnalazione vulnerabilità
+
+Per l'avvio da VS Code con MCP:
+- il transport locale di default è `stdio`
+- i template `mcp.json` (locale supportato oggi + HTTP remoto pianificato) sono in [docs/mcp-tools.md](docs/mcp-tools.md) e [docs/configuration.md](docs/configuration.md)
 
 ## 📍 Roadmap (sintesi)
 
@@ -193,8 +198,9 @@ Documentazione completa:
 - [x] Tool MCP (`select`, `search`, `aggregate`)
 - [x] Supporto multi-database (PostgreSQL, MySQL/MariaDB, SQLite)
 - [x] Enterprise layer iniziale (osservabilità, hardening, policy dinamica)
-- [x] Stabilità API MCP (descriptor versionato; transport ancora successivo)
+- [x] Stabilità API MCP (descriptor versionato; transport stdio)
 - [x] Transport MCP stdio
+- [x] Benchmark
 - [ ] Versione 1.0 candidate
 
 ## 📄 Licenza
