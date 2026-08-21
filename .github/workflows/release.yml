@@ -57,7 +57,7 @@ jobs:
             target: aarch64-pc-windows-msvc
             archive: zip
           - name: macos-x86_64
-            runner: macos-13
+            runner: macos-15-intel
             target: x86_64-apple-darwin
             archive: tar.gz
           - name: macos-aarch64
@@ -80,6 +80,8 @@ jobs:
 
       - name: Build release binary
         shell: bash
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
         run: cargo build --release --locked --target "${{ matrix.target }}"
 
       - name: Package Unix binary
@@ -104,17 +106,26 @@ jobs:
         shell: bash
         run: |
           cd dist
+          archives=()
+          while IFS= read -r -d '' archive; do
+            archives+=("$archive")
+          done < <(find . -maxdepth 1 -type f \( -name '*.tar.gz' -o -name '*.zip' \) -print0)
           if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum *.* > "SHA256SUMS-${{ matrix.name }}"
+            sha256sum "${archives[@]}" > "SHA256SUMS-${{ matrix.name }}"
           else
-            shasum -a 256 *.* > "SHA256SUMS-${{ matrix.name }}"
+            shasum -a 256 "${archives[@]}" > "SHA256SUMS-${{ matrix.name }}"
           fi
 
       - name: Upload artifacts to Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: gh release upload "${{ needs.release.outputs.tag_name }}" dist/* --clobber
+        run: |
+          files=()
+          while IFS= read -r -d '' file; do
+            files+=("$file")
+          done < <(find dist -maxdepth 1 -type f -print0)
+          gh release upload "${{ needs.release.outputs.tag_name }}" "${files[@]}" --clobber
 
   sonar-analysis:
     name: SonarQube Quality Scan
