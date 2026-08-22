@@ -1,0 +1,40 @@
+{
+  "name": "copilot-datagate",
+  "displayName": "DataGate",
+  "description": "Policy-driven, read-only MCP server for safe database access from AI tools.",
+  "repository": "https://github.com/afurlane/copilot-datagate",
+  "license": "Apache-2.0",
+  "transport": {
+    "type": "stdio",
+    "command": "copilot-datagate",
+    "args": ["mcp", "stdio"],
+    "env": {
+      "DATAGATE_PROJECT_ROOT": "${workspaceFolder}"
+    }
+  },
+  "configuration": {
+    "projectConfigPaths": [
+      "${workspaceFolder}/.datagate/datagate.toml",
+      "${workspaceFolder}/datagate.toml"
+    ],
+    "userConfigPath": "~/.config/datagate/config.toml",
+    "secrets": "environment_variables_only",
+    "singleActiveConnection": true,
+    "namedConnectionRequired": true
+  },
+  "security": {
+    "localOnly": true,
+    "readOnly": true,
+    "freeSql": false,
+    "denyByDefault": true,
+    "httpTransport": "not_enabled_for_1_0"
+  },
+  "platforms": [
+    "linux-x86_64",
+    "linux-aarch64",
+    "macos-x86_64",
+    "macos-aarch64",
+    "windows-x86_64",
+    "windows-aarch64"
+  ]
+}

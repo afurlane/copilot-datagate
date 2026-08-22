@@ -52,11 +52,11 @@ because the merge commit has already passed the pull-request checks.
 
 ## Operational Notes
 
-The current binary initializes configuration and the selected backend, while
-MCP transport wiring remains a post-candidate item. The supported tool contracts
-are exposed as typed Rust APIs and are documented in [mcp-tools.md](mcp-tools.md).
-Use [configuration.md](configuration.md) for local setup, backend variables,
-policy profiles, observability, and verification commands.
+The current binary initializes configuration and the selected backend, and can
+run the MCP stdio transport through `copilot-datagate mcp stdio`. The supported
+tool contracts are documented in [mcp-tools.md](mcp-tools.md). Use
+[configuration.md](configuration.md) for local setup, named connections, backend
+variables, policy profiles, observability, and verification commands.
 
 The release version and changelog are managed by release-please. Do not edit
 `Cargo.toml` version or `CHANGELOG.md` manually as part of candidate work.
@@ -67,8 +67,7 @@ SHA-256 checksum file.
 
 ## Remaining 1.0 Release Work
 
-- stabilize and publish the MCP transport/API contract
-- add end-to-end tests with Copilot
-- add reproducible benchmarks
-- complete final hardening review
+- evaluate MCP Registry, VS Code, Visual Studio, and Rider / IntelliJ support for
+  local stdio servers
+- publish the MCP Registry entry if compatible with the local stdio model
 - publish the official release

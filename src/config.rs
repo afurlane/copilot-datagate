@@ -23,8 +23,12 @@ pub enum ConfigError {
     Parse(#[from] toml::de::Error),
     #[error("unknown configuration profile `{0}`")]
     UnknownProfile(String),
+    #[error("invalid connection name `{0}`")]
+    InvalidConnectionName(String),
     #[error("invalid or missing database environment variable `{variable}`")]
     InvalidEnvironment { variable: &'static str },
+    #[error("invalid or missing database environment variable `{variable}`")]
+    InvalidConnectionEnvironment { variable: String },
     #[error("invalid backend selector `{value}` in environment variable `DATAGATE_BACKEND`")]
     InvalidBackendSelector { value: String },
 }
@@ -39,17 +43,30 @@ pub enum BackendSelector {
 
 impl BackendSelector {
     pub fn from_env() -> Result<Self, ConfigError> {
-        match optional_env("DATAGATE_BACKEND")?
-            .map(|value| value.trim().to_ascii_lowercase())
-            .as_deref()
-        {
+        match optional_env("DATAGATE_BACKEND")?.as_deref() {
             None | Some("auto") => Ok(Self::Auto),
-            Some("postgres") => Ok(Self::Postgres),
-            Some("mysql") | Some("mariadb") => Ok(Self::MySql),
-            Some("sqlite") => Ok(Self::Sqlite),
-            Some(value) => Err(ConfigError::InvalidBackendSelector {
+            Some(value) => Self::parse(value),
+        }
+    }
+
+    pub fn parse(value: &str) -> Result<Self, ConfigError> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "auto" => Ok(Self::Auto),
+            "postgres" => Ok(Self::Postgres),
+            "mysql" | "mariadb" => Ok(Self::MySql),
+            "sqlite" => Ok(Self::Sqlite),
+            value => Err(ConfigError::InvalidBackendSelector {
                 value: value.to_string(),
             }),
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Postgres => "postgres",
+            Self::MySql => "mysql",
+            Self::Sqlite => "sqlite",
         }
     }
 }
@@ -57,6 +74,8 @@ impl BackendSelector {
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct Config {
     pub profile: Option<String>,
+    #[serde(default)]
+    pub connection: Option<ConnectionConfig>,
     #[serde(default)]
     pub policy: PolicyConfig,
     #[serde(default)]
@@ -66,7 +85,165 @@ pub struct Config {
 #[derive(Debug, Deserialize, Default, Clone)]
 pub struct ProfileConfig {
     #[serde(default)]
+    pub connection: Option<ConnectionConfig>,
+    #[serde(default)]
     pub policy: PolicyConfig,
+}
+
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+pub struct ConnectionConfig {
+    #[serde(default = "default_connection_name")]
+    pub name: String,
+    pub backend: Option<String>,
+    pub url_env: Option<String>,
+    pub options_env: Option<String>,
+    pub host_env: Option<String>,
+    pub port_env: Option<String>,
+    pub user_env: Option<String>,
+    pub password_env: Option<String>,
+    pub database_env: Option<String>,
+    pub path_env: Option<String>,
+    pub max_connections_env: Option<String>,
+    pub acquire_timeout_secs_env: Option<String>,
+}
+
+impl Default for ConnectionConfig {
+    fn default() -> Self {
+        Self {
+            name: default_connection_name(),
+            backend: None,
+            url_env: None,
+            options_env: None,
+            host_env: None,
+            port_env: None,
+            user_env: None,
+            password_env: None,
+            database_env: None,
+            path_env: None,
+            max_connections_env: None,
+            acquire_timeout_secs_env: None,
+        }
+    }
+}
+
+impl ConnectionConfig {
+    pub fn backend_selector(&self) -> Result<Option<BackendSelector>, ConfigError> {
+        self.backend
+            .as_deref()
+            .map(BackendSelector::parse)
+            .transpose()
+    }
+
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.name.is_empty()
+            || self.name.len() > 64
+            || !self
+                .name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+        {
+            return Err(ConfigError::InvalidConnectionName(self.name.clone()));
+        }
+        Ok(())
+    }
+
+    pub fn postgres_env_names(&self) -> RelationalEnvNames<'_> {
+        RelationalEnvNames {
+            url: env_name(self.url_env.as_deref(), "DB_URL"),
+            options: Some(env_name(self.options_env.as_deref(), "DB_OPTIONS")),
+            host: env_name(self.host_env.as_deref(), "DB_HOST"),
+            port: env_name(self.port_env.as_deref(), "DB_PORT"),
+            user: env_name(self.user_env.as_deref(), "DB_USER"),
+            password: env_name(self.password_env.as_deref(), "DB_PASSWORD"),
+            database: env_name(self.database_env.as_deref(), "DB_NAME"),
+            max_connections: env_name(self.max_connections_env.as_deref(), "DB_MAX_CONNECTIONS"),
+            acquire_timeout_secs: env_name(
+                self.acquire_timeout_secs_env.as_deref(),
+                "DB_ACQUIRE_TIMEOUT_SECS",
+            ),
+        }
+    }
+
+    pub fn mysql_env_names(&self) -> RelationalEnvNames<'_> {
+        RelationalEnvNames {
+            url: env_name(self.url_env.as_deref(), "MYSQL_URL"),
+            options: None,
+            host: env_name(self.host_env.as_deref(), "MYSQL_HOST"),
+            port: env_name(self.port_env.as_deref(), "MYSQL_PORT"),
+            user: env_name(self.user_env.as_deref(), "MYSQL_USER"),
+            password: env_name(self.password_env.as_deref(), "MYSQL_PASSWORD"),
+            database: env_name(self.database_env.as_deref(), "MYSQL_DATABASE"),
+            max_connections: env_name(self.max_connections_env.as_deref(), "MYSQL_MAX_CONNECTIONS"),
+            acquire_timeout_secs: env_name(
+                self.acquire_timeout_secs_env.as_deref(),
+                "MYSQL_ACQUIRE_TIMEOUT_SECS",
+            ),
+        }
+    }
+
+    pub fn sqlite_env_names(&self) -> SqliteEnvNames<'_> {
+        SqliteEnvNames {
+            url: env_name(self.url_env.as_deref(), "SQLITE_URL"),
+            path: env_name(self.path_env.as_deref(), "SQLITE_PATH"),
+            max_connections: env_name(
+                self.max_connections_env.as_deref(),
+                "SQLITE_MAX_CONNECTIONS",
+            ),
+            acquire_timeout_secs: env_name(
+                self.acquire_timeout_secs_env.as_deref(),
+                "SQLITE_ACQUIRE_TIMEOUT_SECS",
+            ),
+        }
+    }
+}
+
+pub struct RelationalEnvNames<'a> {
+    pub url: &'a str,
+    pub options: Option<&'a str>,
+    pub host: &'a str,
+    pub port: &'a str,
+    pub user: &'a str,
+    pub password: &'a str,
+    pub database: &'a str,
+    pub max_connections: &'a str,
+    pub acquire_timeout_secs: &'a str,
+}
+
+pub struct SqliteEnvNames<'a> {
+    pub url: &'a str,
+    pub path: &'a str,
+    pub max_connections: &'a str,
+    pub acquire_timeout_secs: &'a str,
+}
+
+struct ComponentEnvNames<'a> {
+    host: &'a str,
+    port: &'a str,
+    user: &'a str,
+    password: &'a str,
+    database: &'a str,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct ComponentConnection {
+    host: String,
+    port: u16,
+    user: String,
+    password: Option<String>,
+    database: String,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ConnectionEnvSource {
+    Missing,
+    Url(String),
+    Components,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct PoolSettings {
+    max_connections: u32,
+    acquire_timeout_secs: u64,
 }
 
 impl Config {
@@ -91,6 +268,19 @@ impl Config {
             _ => Ok(self.policy.clone()),
         }
     }
+
+    pub fn effective_connection(&self) -> Result<ConnectionConfig, ConfigError> {
+        let connection = match self.profile.as_deref() {
+            Some(profile) if !self.profiles.is_empty() => self
+                .profiles
+                .get(profile)
+                .map(|config| config.connection.clone().unwrap_or_default())
+                .ok_or_else(|| ConfigError::UnknownProfile(profile.to_string()))?,
+            _ => self.connection.clone().unwrap_or_default(),
+        };
+        connection.validate()?;
+        Ok(connection)
+    }
 }
 
 /// PostgreSQL pool configuration sourced only from environment variables.
@@ -104,66 +294,53 @@ pub struct PostgresConfig {
 }
 
 impl PostgresConfig {
+    #[allow(dead_code)]
     pub fn from_env() -> Result<Option<Self>, ConfigError> {
-        let has_url = env::var_os("DB_URL").is_some();
-        let has_components = [
-            "DB_HOST",
-            "DB_USER",
-            "DB_PORT",
-            "DB_PASSWORD",
-            "DB_NAME",
-            "DB_OPTIONS",
-        ]
-        .iter()
-        .any(|name| env::var_os(name).is_some());
+        Self::from_connection_env(&ConnectionConfig::default())
+    }
 
-        if !has_url && !has_components {
-            return Ok(None);
-        }
+    pub fn from_connection_env(connection: &ConnectionConfig) -> Result<Option<Self>, ConfigError> {
+        let env_names = connection.postgres_env_names();
+        Self::from_env_names(&env_names)
+    }
 
-        let mut connect_options = if let Some(url) = env::var_os("DB_URL") {
-            let url = url
-                .to_str()
-                .ok_or(ConfigError::InvalidEnvironment { variable: "DB_URL" })?;
-            PgConnectOptions::from_str(url)
-                .map_err(|_| ConfigError::InvalidEnvironment { variable: "DB_URL" })?
-        } else {
-            let host = required_env("DB_HOST")?;
-            let user = required_env("DB_USER")?;
-            let database = required_env("DB_NAME")?;
-            let port = optional_env("DB_PORT")?
-                .map(|value| {
-                    value
-                        .parse::<u16>()
-                        .map_err(|_| ConfigError::InvalidEnvironment {
-                            variable: "DB_PORT",
-                        })
-                })
-                .transpose()?
-                .unwrap_or(5432);
-
-            let mut options = PgConnectOptions::new()
-                .host(&host)
-                .port(port)
-                .username(&user)
-                .database(&database);
-            if let Some(password) = optional_env("DB_PASSWORD")? {
-                options = options.password(&password);
+    fn from_env_names(env_names: &RelationalEnvNames<'_>) -> Result<Option<Self>, ConfigError> {
+        let component_envs = ComponentEnvNames {
+            host: env_names.host,
+            port: env_names.port,
+            user: env_names.user,
+            password: env_names.password,
+            database: env_names.database,
+        };
+        let mut connect_options = match connection_env_source(env_names.url, &component_envs)? {
+            ConnectionEnvSource::Missing => return Ok(None),
+            ConnectionEnvSource::Url(url) => PgConnectOptions::from_str(&url)
+                .map_err(|_| invalid_connection_env(env_names.url))?,
+            ConnectionEnvSource::Components => {
+                let component = read_component_connection(&component_envs, 5432)?;
+                let mut options = PgConnectOptions::new()
+                    .host(&component.host)
+                    .port(component.port)
+                    .username(&component.user)
+                    .database(&component.database);
+                if let Some(password) = component.password {
+                    options = options.password(&password);
+                }
+                options
             }
-            options
         };
 
-        if let Some(raw_options) = optional_env("DB_OPTIONS")? {
-            connect_options = connect_options.options(parse_db_options(&raw_options)?);
+        if let Some(options_env) = env_names.options {
+            if let Some(raw_options) = optional_named_env(options_env)? {
+                connect_options = connect_options.options(parse_db_options(&raw_options)?);
+            }
         }
 
+        let pool = read_pool_settings(env_names.max_connections, env_names.acquire_timeout_secs)?;
         Ok(Some(Self {
             connect_options,
-            max_connections: env_u32_or_default("DB_MAX_CONNECTIONS", default_max_connections())?,
-            acquire_timeout_secs: env_u64_or_default(
-                "DB_ACQUIRE_TIMEOUT_SECS",
-                default_acquire_timeout_secs(),
-            )?,
+            max_connections: pool.max_connections,
+            acquire_timeout_secs: pool.acquire_timeout_secs,
         }))
     }
 }
@@ -190,65 +367,43 @@ pub struct MySqlConfig {
 }
 
 impl MySqlConfig {
+    #[allow(dead_code)]
     pub fn from_env() -> Result<Option<Self>, ConfigError> {
-        let has_url = env::var_os("MYSQL_URL").is_some();
-        let has_components = [
-            "MYSQL_HOST",
-            "MYSQL_USER",
-            "MYSQL_PORT",
-            "MYSQL_PASSWORD",
-            "MYSQL_DATABASE",
-        ]
-        .iter()
-        .any(|name| env::var_os(name).is_some());
+        Self::from_connection_env(&ConnectionConfig::default())
+    }
 
-        if !has_url && !has_components {
-            return Ok(None);
-        }
-
-        let connect_options = if let Some(url) = env::var_os("MYSQL_URL") {
-            let url = url.to_str().ok_or(ConfigError::InvalidEnvironment {
-                variable: "MYSQL_URL",
-            })?;
-            MySqlConnectOptions::from_str(url).map_err(|_| ConfigError::InvalidEnvironment {
-                variable: "MYSQL_URL",
-            })?
-        } else {
-            let host = required_env("MYSQL_HOST")?;
-            let user = required_env("MYSQL_USER")?;
-            let database = required_env("MYSQL_DATABASE")?;
-            let port = optional_env("MYSQL_PORT")?
-                .map(|value| {
-                    value
-                        .parse::<u16>()
-                        .map_err(|_| ConfigError::InvalidEnvironment {
-                            variable: "MYSQL_PORT",
-                        })
-                })
-                .transpose()?
-                .unwrap_or(3306);
-
-            let mut options = MySqlConnectOptions::new()
-                .host(&host)
-                .port(port)
-                .username(&user)
-                .database(&database);
-            if let Some(password) = optional_env("MYSQL_PASSWORD")? {
-                options = options.password(&password);
+    pub fn from_connection_env(connection: &ConnectionConfig) -> Result<Option<Self>, ConfigError> {
+        let env_names = connection.mysql_env_names();
+        let component_envs = ComponentEnvNames {
+            host: env_names.host,
+            port: env_names.port,
+            user: env_names.user,
+            password: env_names.password,
+            database: env_names.database,
+        };
+        let connect_options = match connection_env_source(env_names.url, &component_envs)? {
+            ConnectionEnvSource::Missing => return Ok(None),
+            ConnectionEnvSource::Url(url) => MySqlConnectOptions::from_str(&url)
+                .map_err(|_| invalid_connection_env(env_names.url))?,
+            ConnectionEnvSource::Components => {
+                let component = read_component_connection(&component_envs, 3306)?;
+                let mut options = MySqlConnectOptions::new()
+                    .host(&component.host)
+                    .port(component.port)
+                    .username(&component.user)
+                    .database(&component.database);
+                if let Some(password) = component.password {
+                    options = options.password(&password);
+                }
+                options
             }
-            options
         };
 
+        let pool = read_pool_settings(env_names.max_connections, env_names.acquire_timeout_secs)?;
         Ok(Some(Self {
             connect_options,
-            max_connections: env_u32_or_default(
-                "MYSQL_MAX_CONNECTIONS",
-                default_max_connections(),
-            )?,
-            acquire_timeout_secs: env_u64_or_default(
-                "MYSQL_ACQUIRE_TIMEOUT_SECS",
-                default_acquire_timeout_secs(),
-            )?,
+            max_connections: pool.max_connections,
+            acquire_timeout_secs: pool.acquire_timeout_secs,
         }))
     }
 }
@@ -276,17 +431,22 @@ pub struct SqliteConfig {
 }
 
 impl SqliteConfig {
+    #[allow(dead_code)]
     pub fn from_env() -> Result<Option<Self>, ConfigError> {
-        let url = optional_env("SQLITE_URL")?;
-        let path = optional_env("SQLITE_PATH")?;
+        Self::from_connection_env(&ConnectionConfig::default())
+    }
+
+    pub fn from_connection_env(connection: &ConnectionConfig) -> Result<Option<Self>, ConfigError> {
+        let env_names = connection.sqlite_env_names();
+        let url = optional_named_env(env_names.url)?;
+        let path = optional_named_env(env_names.path)?;
         if url.is_none() && path.is_none() {
             return Ok(None);
         }
 
         let connect_options = if let Some(url) = url {
-            SqliteConnectOptions::from_str(&url).map_err(|_| ConfigError::InvalidEnvironment {
-                variable: "SQLITE_URL",
-            })?
+            SqliteConnectOptions::from_str(&url)
+                .map_err(|_| invalid_connection_env(env_names.url))?
         } else {
             SqliteConnectOptions::new().filename(path.expect("checked above"))
         }
@@ -295,12 +455,12 @@ impl SqliteConfig {
 
         Ok(Some(Self {
             connect_options,
-            max_connections: env_u32_or_default(
-                "SQLITE_MAX_CONNECTIONS",
+            max_connections: named_env_u32_or_default(
+                env_names.max_connections,
                 default_max_connections(),
             )?,
-            acquire_timeout_secs: env_u64_or_default(
-                "SQLITE_ACQUIRE_TIMEOUT_SECS",
+            acquire_timeout_secs: named_env_u64_or_default(
+                env_names.acquire_timeout_secs,
                 default_acquire_timeout_secs(),
             )?,
         }))
@@ -318,10 +478,6 @@ impl std::fmt::Debug for SqliteConfig {
     }
 }
 
-fn required_env(variable: &'static str) -> Result<String, ConfigError> {
-    optional_env(variable)?.ok_or(ConfigError::InvalidEnvironment { variable })
-}
-
 fn optional_env(variable: &'static str) -> Result<Option<String>, ConfigError> {
     match env::var(variable) {
         Ok(value) if !value.trim().is_empty() => Ok(Some(value)),
@@ -331,24 +487,84 @@ fn optional_env(variable: &'static str) -> Result<Option<String>, ConfigError> {
     }
 }
 
-fn env_u32_or_default(variable: &'static str, default: u32) -> Result<u32, ConfigError> {
-    optional_env(variable)?
-        .map(|value| {
-            value
-                .parse()
-                .map_err(|_| ConfigError::InvalidEnvironment { variable })
-        })
+fn required_named_env(variable: &str) -> Result<String, ConfigError> {
+    optional_named_env(variable)?.ok_or_else(|| invalid_connection_env(variable))
+}
+
+fn optional_named_env(variable: &str) -> Result<Option<String>, ConfigError> {
+    match env::var(variable) {
+        Ok(value) if !value.trim().is_empty() => Ok(Some(value)),
+        Ok(_) => Err(invalid_connection_env(variable)),
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => Err(invalid_connection_env(variable)),
+    }
+}
+
+fn connection_env_source(
+    url_env: &str,
+    component_envs: &ComponentEnvNames<'_>,
+) -> Result<ConnectionEnvSource, ConfigError> {
+    if let Some(url) = optional_named_env(url_env)? {
+        return Ok(ConnectionEnvSource::Url(url));
+    }
+    if [
+        component_envs.host,
+        component_envs.port,
+        component_envs.user,
+        component_envs.password,
+        component_envs.database,
+    ]
+    .iter()
+    .any(|name| env::var_os(name).is_some())
+    {
+        return Ok(ConnectionEnvSource::Components);
+    }
+    Ok(ConnectionEnvSource::Missing)
+}
+
+fn read_component_connection(
+    env_names: &ComponentEnvNames<'_>,
+    default_port: u16,
+) -> Result<ComponentConnection, ConfigError> {
+    Ok(ComponentConnection {
+        host: required_named_env(env_names.host)?,
+        port: read_named_port(env_names.port, default_port)?,
+        user: required_named_env(env_names.user)?,
+        password: optional_named_env(env_names.password)?,
+        database: required_named_env(env_names.database)?,
+    })
+}
+
+fn read_named_port(variable: &str, default: u16) -> Result<u16, ConfigError> {
+    optional_named_env(variable)?
+        .map(|value| value.parse().map_err(|_| invalid_connection_env(variable)))
         .transpose()
         .map(|value| value.unwrap_or(default))
 }
 
-fn env_u64_or_default(variable: &'static str, default: u64) -> Result<u64, ConfigError> {
-    optional_env(variable)?
-        .map(|value| {
-            value
-                .parse()
-                .map_err(|_| ConfigError::InvalidEnvironment { variable })
-        })
+fn read_pool_settings(
+    max_connections_env: &str,
+    acquire_timeout_secs_env: &str,
+) -> Result<PoolSettings, ConfigError> {
+    Ok(PoolSettings {
+        max_connections: named_env_u32_or_default(max_connections_env, default_max_connections())?,
+        acquire_timeout_secs: named_env_u64_or_default(
+            acquire_timeout_secs_env,
+            default_acquire_timeout_secs(),
+        )?,
+    })
+}
+
+fn named_env_u32_or_default(variable: &str, default: u32) -> Result<u32, ConfigError> {
+    optional_named_env(variable)?
+        .map(|value| value.parse().map_err(|_| invalid_connection_env(variable)))
+        .transpose()
+        .map(|value| value.unwrap_or(default))
+}
+
+fn named_env_u64_or_default(variable: &str, default: u64) -> Result<u64, ConfigError> {
+    optional_named_env(variable)?
+        .map(|value| value.parse().map_err(|_| invalid_connection_env(variable)))
         .transpose()
         .map(|value| value.unwrap_or(default))
 }
@@ -373,6 +589,20 @@ fn default_max_connections() -> u32 {
 
 fn default_acquire_timeout_secs() -> u64 {
     5
+}
+
+fn default_connection_name() -> String {
+    "default".to_string()
+}
+
+fn env_name<'a>(configured: Option<&'a str>, default: &'static str) -> &'a str {
+    configured.unwrap_or(default)
+}
+
+fn invalid_connection_env(variable: &str) -> ConfigError {
+    ConfigError::InvalidConnectionEnvironment {
+        variable: variable.to_string(),
+    }
 }
 
 /// Policy engine configuration: allow-listed tables/columns and row limits.
@@ -456,6 +686,7 @@ mod tests {
     use std::sync::Mutex;
 
     static BACKEND_SELECTOR_ENV_LOCK: Mutex<()> = Mutex::new(());
+    static CONNECTION_ENV_LOCK: Mutex<()> = Mutex::new(());
     static MYSQL_ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
@@ -502,6 +733,163 @@ mod tests {
                 ConfigError::InvalidBackendSelector { value } if value == "oracle"
             ));
         });
+    }
+
+    #[test]
+    fn selects_named_connection_from_active_profile() {
+        let raw = r#"
+            profile = "dev"
+
+            [profiles.dev.connection]
+            name = "pippo"
+            backend = "postgres"
+            url_env = "PIPPO_DB_URL"
+
+            [profiles.dev.policy]
+            default_row_limit = 10
+        "#;
+        let config: Config = toml::from_str(raw).expect("valid toml");
+        let connection = config.effective_connection().expect("known connection");
+        assert_eq!(connection.name, "pippo");
+        assert_eq!(
+            connection.backend_selector().unwrap(),
+            Some(BackendSelector::Postgres)
+        );
+        assert_eq!(connection.postgres_env_names().url, "PIPPO_DB_URL");
+    }
+
+    #[test]
+    fn defaults_connection_when_legacy_config_has_no_connection_section() {
+        let config: Config = toml::from_str("[policy]\ndefault_row_limit = 5").expect("valid toml");
+        let connection = config.effective_connection().expect("default connection");
+        assert_eq!(connection.name, "default");
+        assert_eq!(connection.backend_selector().unwrap(), None);
+        assert_eq!(connection.postgres_env_names().url, "DB_URL");
+    }
+
+    #[test]
+    fn rejects_invalid_connection_name() {
+        let config: Config = toml::from_str(
+            r#"
+                [connection]
+                name = "not safe"
+                backend = "sqlite"
+            "#,
+        )
+        .expect("valid toml");
+        assert!(matches!(
+            config.effective_connection(),
+            Err(ConfigError::InvalidConnectionName(name)) if name == "not safe"
+        ));
+    }
+
+    #[test]
+    fn sqlite_config_uses_named_connection_env_vars() {
+        with_connection_env(
+            &[("DATAGATE_CUSTOM_SQLITE_PATH", Some("/tmp/datagate.db"))],
+            || {
+                let connection = ConnectionConfig {
+                    name: "local".into(),
+                    backend: Some("sqlite".into()),
+                    path_env: Some("DATAGATE_CUSTOM_SQLITE_PATH".into()),
+                    ..ConnectionConfig::default()
+                };
+                let config = SqliteConfig::from_connection_env(&connection)
+                    .expect("sqlite env parsing")
+                    .expect("sqlite config present");
+                assert_eq!(config.max_connections, default_max_connections());
+            },
+        );
+    }
+
+    #[test]
+    fn shared_connection_env_source_prefers_url_over_components() {
+        with_connection_env(
+            &[
+                ("DATAGATE_TEST_URL", Some("postgres://reader@localhost/app")),
+                ("DATAGATE_TEST_HOST", Some("localhost")),
+            ],
+            || {
+                let source = connection_env_source(
+                    "DATAGATE_TEST_URL",
+                    &ComponentEnvNames {
+                        host: "DATAGATE_TEST_HOST",
+                        port: "DATAGATE_TEST_PORT",
+                        user: "DATAGATE_TEST_USER",
+                        password: "DATAGATE_TEST_PASSWORD",
+                        database: "DATAGATE_TEST_DATABASE",
+                    },
+                )
+                .expect("source");
+                assert_eq!(
+                    source,
+                    ConnectionEnvSource::Url("postgres://reader@localhost/app".into())
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn shared_component_connection_reads_required_and_optional_values() {
+        with_connection_env(
+            &[
+                ("DATAGATE_TEST_HOST", Some("localhost")),
+                ("DATAGATE_TEST_PORT", Some("15432")),
+                ("DATAGATE_TEST_USER", Some("reader")),
+                ("DATAGATE_TEST_PASSWORD", Some("secret")),
+                ("DATAGATE_TEST_DATABASE", Some("app")),
+            ],
+            || {
+                let connection = read_component_connection(
+                    &ComponentEnvNames {
+                        host: "DATAGATE_TEST_HOST",
+                        port: "DATAGATE_TEST_PORT",
+                        user: "DATAGATE_TEST_USER",
+                        password: "DATAGATE_TEST_PASSWORD",
+                        database: "DATAGATE_TEST_DATABASE",
+                    },
+                    5432,
+                )
+                .expect("component connection");
+                assert_eq!(
+                    connection,
+                    ComponentConnection {
+                        host: "localhost".into(),
+                        port: 15432,
+                        user: "reader".into(),
+                        password: Some("secret".into()),
+                        database: "app".into(),
+                    }
+                );
+            },
+        );
+    }
+
+    #[test]
+    fn shared_pool_settings_use_defaults_and_custom_values() {
+        assert_eq!(
+            read_pool_settings("DATAGATE_TEST_MAX", "DATAGATE_TEST_TIMEOUT").unwrap(),
+            PoolSettings {
+                max_connections: default_max_connections(),
+                acquire_timeout_secs: default_acquire_timeout_secs(),
+            }
+        );
+
+        with_connection_env(
+            &[
+                ("DATAGATE_TEST_MAX", Some("9")),
+                ("DATAGATE_TEST_TIMEOUT", Some("11")),
+            ],
+            || {
+                assert_eq!(
+                    read_pool_settings("DATAGATE_TEST_MAX", "DATAGATE_TEST_TIMEOUT").unwrap(),
+                    PoolSettings {
+                        max_connections: 9,
+                        acquire_timeout_secs: 11,
+                    }
+                );
+            },
+        );
     }
 
     #[test]
@@ -736,9 +1124,7 @@ mod tests {
                 let err = MySqlConfig::from_env().expect_err("invalid port must fail");
                 assert!(matches!(
                     err,
-                    ConfigError::InvalidEnvironment {
-                        variable: "MYSQL_PORT"
-                    }
+                    ConfigError::InvalidConnectionEnvironment { variable } if variable == "MYSQL_PORT"
                 ));
             },
         );
@@ -756,16 +1142,26 @@ mod tests {
                 let err = MySqlConfig::from_env().expect_err("missing user must fail");
                 assert!(matches!(
                     err,
-                    ConfigError::InvalidEnvironment {
-                        variable: "MYSQL_USER"
-                    }
+                    ConfigError::InvalidConnectionEnvironment { variable } if variable == "MYSQL_USER"
                 ));
             },
         );
     }
 
     fn with_mysql_env(overrides: &[(&str, Option<&str>)], test: impl FnOnce()) {
-        let _guard = MYSQL_ENV_LOCK.lock().expect("env lock poisoned");
+        with_env_lock(&MYSQL_ENV_LOCK, overrides, test);
+    }
+
+    fn with_connection_env(overrides: &[(&str, Option<&str>)], test: impl FnOnce()) {
+        with_env_lock(&CONNECTION_ENV_LOCK, overrides, test);
+    }
+
+    fn with_env_lock(
+        lock: &'static Mutex<()>,
+        overrides: &[(&str, Option<&str>)],
+        test: impl FnOnce(),
+    ) {
+        let _guard = lock.lock().expect("env lock poisoned");
         let mut original = Vec::with_capacity(overrides.len());
         for (name, _) in overrides {
             original.push((name.to_string(), std::env::var(name).ok()));

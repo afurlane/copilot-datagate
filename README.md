@@ -182,6 +182,7 @@ Documentazione completa:
 - [docs/hardening.md](docs/hardening.md) — checklist hardening finale per il confine MCP/database
 - [docs/http-transport-decision.md](docs/http-transport-decision.md) — decisione sicurezza sul transport MCP HTTP remoto
 - [docs/registry-publication.md](docs/registry-publication.md) — strategia MCP Registry, installazione cross-editor e connessioni nominate
+- [docs/mcp-registry-metadata.json](docs/mcp-registry-metadata.json) — metadata candidate per registry/gallerie MCP
 - [docs/release-candidate.md](docs/release-candidate.md) — criteri e gate della 1.0 candidate
 - [docs/mcp-tools.md](docs/mcp-tools.md) — contratti interni e regole dei tool MCP
 - [CONTRIBUTING.md](CONTRIBUTING.md) — regole di contribuzione, commit e branch
