@@ -181,6 +181,7 @@ Documentazione completa:
 - [docs/benchmarks.md](docs/benchmarks.md) — benchmark locali SQLite e PostgreSQL reale
 - [docs/hardening.md](docs/hardening.md) — checklist hardening finale per il confine MCP/database
 - [docs/http-transport-decision.md](docs/http-transport-decision.md) — decisione sicurezza sul transport MCP HTTP remoto
+- [docs/editor-registry-evaluation.md](docs/editor-registry-evaluation.md) — valutazione requisiti MCP Registry e client cross-editor
 - [docs/registry-publication.md](docs/registry-publication.md) — strategia MCP Registry, installazione cross-editor e connessioni nominate
 - [docs/mcp-registry-metadata.json](docs/mcp-registry-metadata.json) — metadata candidate per registry/gallerie MCP
 - [docs/release-candidate.md](docs/release-candidate.md) — criteri e gate della 1.0 candidate

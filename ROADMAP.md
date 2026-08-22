@@ -55,7 +55,7 @@
 - [x] Connessione nominata singola per workspace (es. `name = "pippo"`) come base compatibile con futuro multi-connessione
 - [x] CLI auto-configurante (`init`, `doctor`, `mcp stdio`) senza segreti nei file di progetto
 - [x] Preparazione metadata e template stdio locale per MCP Registry / VS Code MCP Server Gallery
-- [ ] Valutazione requisiti MCP Registry, VS Code, Visual Studio e Rider / IntelliJ per server MCP locali installabili
+- [x] Valutazione requisiti MCP Registry, VS Code, Visual Studio e Rider / IntelliJ per server MCP locali installabili
 - [ ] Pubblicazione MCP Registry, se compatibile con transport stdio locale e installazione cross-editor
 - [ ] Pubblicazione ufficiale
 
