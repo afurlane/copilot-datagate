@@ -148,37 +148,11 @@ impl ConnectionConfig {
     }
 
     pub fn postgres_env_names(&self) -> RelationalEnvNames<'_> {
-        RelationalEnvNames {
-            url: env_name(self.url_env.as_deref(), "DB_URL"),
-            options: Some(env_name(self.options_env.as_deref(), "DB_OPTIONS")),
-            host: env_name(self.host_env.as_deref(), "DB_HOST"),
-            port: env_name(self.port_env.as_deref(), "DB_PORT"),
-            user: env_name(self.user_env.as_deref(), "DB_USER"),
-            password: env_name(self.password_env.as_deref(), "DB_PASSWORD"),
-            database: env_name(self.database_env.as_deref(), "DB_NAME"),
-            max_connections: env_name(self.max_connections_env.as_deref(), "DB_MAX_CONNECTIONS"),
-            acquire_timeout_secs: env_name(
-                self.acquire_timeout_secs_env.as_deref(),
-                "DB_ACQUIRE_TIMEOUT_SECS",
-            ),
-        }
+        self.relational_env_names(&POSTGRES_ENV_DEFAULTS)
     }
 
     pub fn mysql_env_names(&self) -> RelationalEnvNames<'_> {
-        RelationalEnvNames {
-            url: env_name(self.url_env.as_deref(), "MYSQL_URL"),
-            options: None,
-            host: env_name(self.host_env.as_deref(), "MYSQL_HOST"),
-            port: env_name(self.port_env.as_deref(), "MYSQL_PORT"),
-            user: env_name(self.user_env.as_deref(), "MYSQL_USER"),
-            password: env_name(self.password_env.as_deref(), "MYSQL_PASSWORD"),
-            database: env_name(self.database_env.as_deref(), "MYSQL_DATABASE"),
-            max_connections: env_name(self.max_connections_env.as_deref(), "MYSQL_MAX_CONNECTIONS"),
-            acquire_timeout_secs: env_name(
-                self.acquire_timeout_secs_env.as_deref(),
-                "MYSQL_ACQUIRE_TIMEOUT_SECS",
-            ),
-        }
+        self.relational_env_names(&MYSQL_ENV_DEFAULTS)
     }
 
     pub fn sqlite_env_names(&self) -> SqliteEnvNames<'_> {
@@ -187,15 +161,89 @@ impl ConnectionConfig {
             path: env_name(self.path_env.as_deref(), "SQLITE_PATH"),
             max_connections: env_name(
                 self.max_connections_env.as_deref(),
-                "SQLITE_MAX_CONNECTIONS",
+                SQLITE_POOL_DEFAULTS.max_connections,
             ),
             acquire_timeout_secs: env_name(
                 self.acquire_timeout_secs_env.as_deref(),
-                "SQLITE_ACQUIRE_TIMEOUT_SECS",
+                SQLITE_POOL_DEFAULTS.acquire_timeout_secs,
+            ),
+        }
+    }
+
+    fn relational_env_names<'a>(
+        &'a self,
+        defaults: &'static RelationalEnvDefaults,
+    ) -> RelationalEnvNames<'a> {
+        RelationalEnvNames {
+            url: env_name(self.url_env.as_deref(), defaults.url),
+            options: defaults
+                .options
+                .map(|name| env_name(self.options_env.as_deref(), name)),
+            host: env_name(self.host_env.as_deref(), defaults.host),
+            port: env_name(self.port_env.as_deref(), defaults.port),
+            user: env_name(self.user_env.as_deref(), defaults.user),
+            password: env_name(self.password_env.as_deref(), defaults.password),
+            database: env_name(self.database_env.as_deref(), defaults.database),
+            max_connections: env_name(
+                self.max_connections_env.as_deref(),
+                defaults.pool.max_connections,
+            ),
+            acquire_timeout_secs: env_name(
+                self.acquire_timeout_secs_env.as_deref(),
+                defaults.pool.acquire_timeout_secs,
             ),
         }
     }
 }
+
+struct PoolEnvDefaults {
+    max_connections: &'static str,
+    acquire_timeout_secs: &'static str,
+}
+
+struct RelationalEnvDefaults {
+    url: &'static str,
+    options: Option<&'static str>,
+    host: &'static str,
+    port: &'static str,
+    user: &'static str,
+    password: &'static str,
+    database: &'static str,
+    pool: PoolEnvDefaults,
+}
+
+const POSTGRES_ENV_DEFAULTS: RelationalEnvDefaults = RelationalEnvDefaults {
+    url: "DB_URL",
+    options: Some("DB_OPTIONS"),
+    host: "DB_HOST",
+    port: "DB_PORT",
+    user: "DB_USER",
+    password: "DB_PASSWORD",
+    database: "DB_NAME",
+    pool: PoolEnvDefaults {
+        max_connections: "DB_MAX_CONNECTIONS",
+        acquire_timeout_secs: "DB_ACQUIRE_TIMEOUT_SECS",
+    },
+};
+
+const MYSQL_ENV_DEFAULTS: RelationalEnvDefaults = RelationalEnvDefaults {
+    url: "MYSQL_URL",
+    options: None,
+    host: "MYSQL_HOST",
+    port: "MYSQL_PORT",
+    user: "MYSQL_USER",
+    password: "MYSQL_PASSWORD",
+    database: "MYSQL_DATABASE",
+    pool: PoolEnvDefaults {
+        max_connections: "MYSQL_MAX_CONNECTIONS",
+        acquire_timeout_secs: "MYSQL_ACQUIRE_TIMEOUT_SECS",
+    },
+};
+
+const SQLITE_POOL_DEFAULTS: PoolEnvDefaults = PoolEnvDefaults {
+    max_connections: "SQLITE_MAX_CONNECTIONS",
+    acquire_timeout_secs: "SQLITE_ACQUIRE_TIMEOUT_SECS",
+};
 
 pub struct RelationalEnvNames<'a> {
     pub url: &'a str,
@@ -798,6 +846,60 @@ mod tests {
                     .expect("sqlite env parsing")
                     .expect("sqlite config present");
                 assert_eq!(config.max_connections, default_max_connections());
+            },
+        );
+    }
+
+    #[test]
+    fn postgres_config_uses_named_connection_env_vars() {
+        with_connection_env(
+            &[
+                ("PIPPO_DB_URL", Some("postgres://reader@localhost:5432/app")),
+                ("PIPPO_DB_OPTIONS", Some("application_name=datagate")),
+                ("PIPPO_DB_MAX", Some("13")),
+                ("PIPPO_DB_TIMEOUT", Some("17")),
+            ],
+            || {
+                let connection = ConnectionConfig {
+                    name: "pippo".into(),
+                    backend: Some("postgres".into()),
+                    url_env: Some("PIPPO_DB_URL".into()),
+                    options_env: Some("PIPPO_DB_OPTIONS".into()),
+                    max_connections_env: Some("PIPPO_DB_MAX".into()),
+                    acquire_timeout_secs_env: Some("PIPPO_DB_TIMEOUT".into()),
+                    ..ConnectionConfig::default()
+                };
+                let config = PostgresConfig::from_connection_env(&connection)
+                    .expect("postgres env parsing")
+                    .expect("postgres config present");
+                assert_eq!(config.max_connections, 13);
+                assert_eq!(config.acquire_timeout_secs, 17);
+            },
+        );
+    }
+
+    #[test]
+    fn mysql_config_uses_named_connection_env_vars() {
+        with_connection_env(
+            &[
+                ("PLUTO_MYSQL_URL", Some("mysql://reader@localhost:3306/app")),
+                ("PLUTO_MYSQL_MAX", Some("19")),
+                ("PLUTO_MYSQL_TIMEOUT", Some("23")),
+            ],
+            || {
+                let connection = ConnectionConfig {
+                    name: "pluto".into(),
+                    backend: Some("mysql".into()),
+                    url_env: Some("PLUTO_MYSQL_URL".into()),
+                    max_connections_env: Some("PLUTO_MYSQL_MAX".into()),
+                    acquire_timeout_secs_env: Some("PLUTO_MYSQL_TIMEOUT".into()),
+                    ..ConnectionConfig::default()
+                };
+                let config = MySqlConfig::from_connection_env(&connection)
+                    .expect("mysql env parsing")
+                    .expect("mysql config present");
+                assert_eq!(config.max_connections, 19);
+                assert_eq!(config.acquire_timeout_secs, 23);
             },
         );
     }
