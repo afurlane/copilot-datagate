@@ -56,6 +56,6 @@ cargo run --release --bin datagate-benchmark
 Hardening does not include remote transport implementation or registry
 publication. Those remain separate roadmap items:
 
-- MCP HTTP transport for remote scenarios.
-- Dual-mode transport selection for stdio and HTTP.
-- MCP Registry publication and VS Code MCP Server Gallery evaluation.
+- Security decision record for optional MCP HTTP transport.
+- Project-aware configuration resolver with named connection support.
+- MCP Registry publication and cross-editor gallery evaluation for local stdio.
