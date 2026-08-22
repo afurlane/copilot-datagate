@@ -63,7 +63,7 @@
 - [x] Valutazione WinGet
 - [x] Valutazione crates.io / `cargo install`
 - [x] Valutazione OCI/Docker per scenari non-IDE
-- [ ] Pubblicazione MCP Registry, se compatibile con transport stdio locale e installazione cross-editor
+- [x] Pubblicazione MCP Registry, se compatibile con transport stdio locale e installazione cross-editor
 - [ ] Pubblicazione ufficiale
 
 > Ogni feature nuova deve essere accompagnata da test (unit e, dove applicabile,

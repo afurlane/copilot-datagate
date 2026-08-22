@@ -168,8 +168,8 @@ For 0.4.0, `server.json` targets the optional npm wrapper package
 `@copilot-datagate/cli@0.4.0`, which has been published to npm. Future npm
 publishes should use the manual `Publish npm wrapper` GitHub Actions workflow
 with npm Trusted Publishing (OIDC), not a long-lived npm token. MCP Registry
-publication still requires an authenticated `mcp-publisher login github` session
-or an approved GitHub Actions publishing flow.
+publication for `io.github.afurlane/copilot-datagate` version `0.4.0` was
+completed with `mcp-publisher publish` and is active in the registry.
 
 ## Secret Handling
 
