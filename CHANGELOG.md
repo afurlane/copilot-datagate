@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/afurlane/copilot-datagate/compare/copilot-datagate-v0.3.0...copilot-datagate-v0.4.0) (2026-08-22)
+
+
+### Features
+
+* **config:** resolve project-aware config paths ([#46](https://github.com/afurlane/copilot-datagate/issues/46)) ([7d978ae](https://github.com/afurlane/copilot-datagate/commit/7d978ae326a30b80fbf462ddcd20ce71da080b62))
+
 ## [0.3.0](https://github.com/afurlane/copilot-datagate/compare/copilot-datagate-v0.2.1...copilot-datagate-v0.3.0) (2026-08-21)
 
 
