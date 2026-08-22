@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/afurlane/copilot-datagate/compare/copilot-datagate-v0.3.0...copilot-datagate-v0.4.0) (2026-08-22)
+
+
+### Features
+
+* **config:** add named connection cli ([#48](https://github.com/afurlane/copilot-datagate/issues/48)) ([7a2c153](https://github.com/afurlane/copilot-datagate/commit/7a2c153fe1825d17143ca629db3cc7919ed8c03f))
+* **config:** resolve project-aware config paths ([#46](https://github.com/afurlane/copilot-datagate/issues/46)) ([7d978ae](https://github.com/afurlane/copilot-datagate/commit/7d978ae326a30b80fbf462ddcd20ce71da080b62))
+
+
+### Bug Fixes
+
+* **config:** reduce named connection duplication ([#50](https://github.com/afurlane/copilot-datagate/issues/50)) ([d4d7ccd](https://github.com/afurlane/copilot-datagate/commit/d4d7ccd7bfe0c068d2926fbc107073b7f63e346a))
+
 ## [0.3.0](https://github.com/afurlane/copilot-datagate/compare/copilot-datagate-v0.2.1...copilot-datagate-v0.3.0) (2026-08-21)
 
 
