@@ -25,6 +25,7 @@ use config::{BackendSelector, Config};
 use metrics::MetricsRegistry;
 use policy::Policy;
 use rate_limit::RateLimiter;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tracing_subscriber::EnvFilter;
 
@@ -68,11 +69,11 @@ async fn main() -> anyhow::Result<()> {
             .await?;
     }
 
-    let config_path = resolve_config_path(std::env::var("DATAGATE_CONFIG").ok());
+    let config_path = resolve_config_path_from_env();
     let config = match Config::load(&config_path) {
         Ok(config) => config,
         Err(err) => {
-            tracing::warn!(%err, path = %config_path, "no valid config found, starting with an empty (deny-all) policy");
+            tracing::warn!(%err, path = %config_path.display(), "no valid config found, starting with an empty (deny-all) policy");
             Config::default()
         }
     };
@@ -143,8 +144,47 @@ fn parse_log_format(format: Option<&str>) -> LogFormat {
     }
 }
 
-fn resolve_config_path(override_path: Option<String>) -> String {
-    override_path.unwrap_or_else(|| "datagate.toml".to_string())
+fn resolve_config_path_from_env() -> PathBuf {
+    let override_path = std::env::var_os("DATAGATE_CONFIG").map(PathBuf::from);
+    let project_root = std::env::var_os("DATAGATE_PROJECT_ROOT")
+        .map(PathBuf::from)
+        .or_else(|| std::env::current_dir().ok());
+    let user_home = user_home_dir();
+    resolve_config_path(override_path, project_root, user_home, Path::exists)
+}
+
+fn resolve_config_path(
+    override_path: Option<PathBuf>,
+    project_root: Option<PathBuf>,
+    user_home: Option<PathBuf>,
+    exists: impl Fn(&Path) -> bool,
+) -> PathBuf {
+    if let Some(path) = override_path {
+        return path;
+    }
+
+    if let Some(root) = project_root {
+        for candidate in [
+            root.join(".datagate").join("datagate.toml"),
+            root.join("datagate.toml"),
+        ] {
+            if exists(&candidate) {
+                return candidate;
+            }
+        }
+    }
+
+    if let Some(home) = user_home {
+        return home.join(".config").join("datagate").join("config.toml");
+    }
+
+    PathBuf::from("datagate.toml")
+}
+
+fn user_home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
 }
 
 fn build_rate_limiter(
@@ -272,16 +312,71 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolves_default_config_path_when_override_missing() {
-        assert_eq!(resolve_config_path(None), "datagate.toml");
+    fn config_path_override_has_highest_precedence() {
+        let path = resolve_config_path(
+            Some(PathBuf::from("/explicit/datagate.toml")),
+            Some(PathBuf::from("/workspace")),
+            Some(PathBuf::from("/home/alice")),
+            |_| true,
+        );
+        assert_eq!(path, PathBuf::from("/explicit/datagate.toml"));
     }
 
     #[test]
-    fn uses_config_path_override_when_provided() {
-        assert_eq!(
-            resolve_config_path(Some("custom.toml".to_string())),
-            "custom.toml"
+    fn resolves_project_dot_datagate_config_before_project_root_config() {
+        let path = resolve_config_path(
+            None,
+            Some(PathBuf::from("/workspace")),
+            Some(PathBuf::from("/home/alice")),
+            |path| {
+                matches!(
+                    path.to_str(),
+                    Some("/workspace/.datagate/datagate.toml") | Some("/workspace/datagate.toml")
+                )
+            },
         );
+        assert_eq!(path, PathBuf::from("/workspace/.datagate/datagate.toml"));
+    }
+
+    #[test]
+    fn resolves_project_root_config_before_user_config() {
+        let path = resolve_config_path(
+            None,
+            Some(PathBuf::from("/workspace")),
+            Some(PathBuf::from("/home/alice")),
+            |path| matches!(path.to_str(), Some("/workspace/datagate.toml")),
+        );
+        assert_eq!(path, PathBuf::from("/workspace/datagate.toml"));
+    }
+
+    #[test]
+    fn falls_back_to_user_config_when_project_configs_are_missing() {
+        let path = resolve_config_path(
+            None,
+            Some(PathBuf::from("/workspace")),
+            Some(PathBuf::from("/home/alice")),
+            |_| false,
+        );
+        assert_eq!(
+            path,
+            PathBuf::from("/home/alice/.config/datagate/config.toml")
+        );
+    }
+
+    #[test]
+    fn falls_back_to_legacy_relative_config_without_project_or_home() {
+        let path = resolve_config_path(None, None, None, |_| false);
+        assert_eq!(path, PathBuf::from("datagate.toml"));
+    }
+
+    #[test]
+    fn resolves_home_from_unix_or_windows_environment() {
+        let home = user_home_dir();
+        if cfg!(windows) {
+            assert!(home.is_some() || std::env::var_os("USERPROFILE").is_none());
+        } else {
+            assert!(home.is_some() || std::env::var_os("HOME").is_none());
+        }
     }
 
     #[test]

@@ -169,6 +169,10 @@ HTTP is not part of the registry default. It requires a separate decision record
 because it changes the threat model from local process execution to network
 exposure.
 
+The current 1.0 decision is documented in
+[http-transport-decision.md](http-transport-decision.md): registry publication
+targets local stdio only.
+
 Any future HTTP transport must define at least:
 
 - TLS requirements
