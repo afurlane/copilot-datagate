@@ -21,7 +21,7 @@ use backend::mysql::MySqlBackend;
 use backend::postgres::PostgresBackend;
 use backend::sqlite::SqliteBackend;
 use backend::ReadOnlyBackend;
-use config::{BackendSelector, Config};
+use config::{BackendSelector, Config, ConnectionConfig};
 use metrics::MetricsRegistry;
 use policy::Policy;
 use rate_limit::RateLimiter;
@@ -35,12 +35,46 @@ enum LogFormat {
     Json,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CliCommand {
+    Run,
+    McpStdio,
+    Init(InitOptions),
+    Doctor,
+    Help,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct InitOptions {
+    name: String,
+    backend: BackendSelector,
+    force: bool,
+}
+
+enum BackendConfig {
+    Postgres(config::PostgresConfig),
+    MySql(config::MySqlConfig),
+    Sqlite(config::SqliteConfig),
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let command = parse_cli_command(std::env::args().skip(1))?;
+    let mcp_stdio_mode = command == CliCommand::McpStdio
+        || std::env::var("DATAGATE_MCP_STDIO").ok().as_deref() == Some("1");
     init_logging(
         std::env::var("LOG_FORMAT").ok().as_deref(),
         std::env::var("LOG_LEVEL").ok().as_deref(),
+        mcp_stdio_mode,
     )?;
+
+    match command {
+        CliCommand::Help => return print_help(),
+        CliCommand::Init(options) => return run_init(options),
+        CliCommand::Doctor => return run_doctor(),
+        CliCommand::Run | CliCommand::McpStdio => {}
+    }
+
     tracing::info!("DataGate starting (skeleton build, no backend wired yet)");
 
     let metrics_snapshot = init_metrics_snapshot();
@@ -88,12 +122,15 @@ async fn main() -> anyhow::Result<()> {
     let policy = Policy::new(policy_config);
     tracing::info!(tables = policy_table_count, "policy engine ready");
 
-    let backend_selector = BackendSelector::from_env()?;
-    if std::env::var("DATAGATE_MCP_STDIO").ok().as_deref() == Some("1") {
-        let backend = initialize_mcp_backend(backend_selector).await?;
+    let connection_config = config.effective_connection()?;
+    tracing::info!(connection = %connection_config.name, "connection config ready");
+
+    let backend_selector = resolve_backend_selector(&connection_config)?;
+    if mcp_stdio_mode {
+        let backend = initialize_mcp_backend(backend_selector, &connection_config).await?;
         return mcp_transport::serve_stdio(mcp_transport::McpServer::new(backend, policy)).await;
     }
-    initialize_backend(backend_selector).await?;
+    initialize_backend(backend_selector, &connection_config).await?;
 
     Ok(())
 }
@@ -106,9 +143,12 @@ fn init_performance_profile() -> metrics::PerformanceProfile {
     MetricsRegistry::new().performance_profile()
 }
 
-fn init_logging(format: Option<&str>, level: Option<&str>) -> anyhow::Result<()> {
+fn init_logging(
+    format: Option<&str>,
+    level: Option<&str>,
+    mcp_stdio_mode: bool,
+) -> anyhow::Result<()> {
     let format = parse_log_format(format);
-    let mcp_stdio_mode = std::env::var("DATAGATE_MCP_STDIO").ok().as_deref() == Some("1");
     let level = level.unwrap_or(if mcp_stdio_mode { "warn" } else { "info" });
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(level));
     let ansi_enabled = !mcp_stdio_mode;
@@ -130,6 +170,210 @@ fn init_logging(format: Option<&str>, level: Option<&str>) -> anyhow::Result<()>
             .with_writer(std::io::stderr)
             .try_init()
             .map_err(|err| anyhow::anyhow!(err.to_string())),
+    }
+}
+
+fn parse_cli_command(args: impl IntoIterator<Item = String>) -> anyhow::Result<CliCommand> {
+    let args = args.into_iter().collect::<Vec<_>>();
+    match args.as_slice() {
+        [] => Ok(CliCommand::Run),
+        [command] if command == "--help" || command == "-h" || command == "help" => {
+            Ok(CliCommand::Help)
+        }
+        [command] if command == "doctor" => Ok(CliCommand::Doctor),
+        [command, transport] if command == "mcp" && transport == "stdio" => {
+            Ok(CliCommand::McpStdio)
+        }
+        [command, rest @ ..] if command == "init" => parse_init_options(rest),
+        _ => anyhow::bail!("unknown command; run `copilot-datagate --help`"),
+    }
+}
+
+fn parse_init_options(args: &[String]) -> anyhow::Result<CliCommand> {
+    let mut name = "default".to_string();
+    let mut backend = BackendSelector::Postgres;
+    let mut force = false;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--name" => {
+                index += 1;
+                name = args
+                    .get(index)
+                    .cloned()
+                    .ok_or_else(|| anyhow::anyhow!("--name requires a value"))?;
+            }
+            "--backend" => {
+                index += 1;
+                let value = args
+                    .get(index)
+                    .ok_or_else(|| anyhow::anyhow!("--backend requires a value"))?;
+                backend = BackendSelector::parse(value)?;
+            }
+            "--force" => force = true,
+            value => anyhow::bail!("unknown init option `{value}`"),
+        }
+        index += 1;
+    }
+
+    Ok(CliCommand::Init(InitOptions {
+        name,
+        backend,
+        force,
+    }))
+}
+
+fn print_help() -> anyhow::Result<()> {
+    println!("copilot-datagate");
+    println!();
+    println!("Commands:");
+    println!("  mcp stdio                 Start the MCP stdio server");
+    println!("  init [--name N] [--backend postgres|mysql|sqlite] [--force]");
+    println!("                            Create .datagate/datagate.toml without secrets");
+    println!(
+        "  doctor                    Inspect config and required env vars without printing secrets"
+    );
+    Ok(())
+}
+
+fn run_init(options: InitOptions) -> anyhow::Result<()> {
+    let connection = ConnectionConfig {
+        name: options.name.clone(),
+        backend: Some(options.backend.as_str().to_string()),
+        ..ConnectionConfig::default()
+    };
+    connection.validate()?;
+
+    let project_root = std::env::var_os("DATAGATE_PROJECT_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or(std::env::current_dir()?);
+    let config_dir = project_root.join(".datagate");
+    let config_path = config_dir.join("datagate.toml");
+    if config_path.exists() && !options.force {
+        anyhow::bail!(
+            "configuration already exists at {}; use --force to overwrite",
+            config_path.display()
+        );
+    }
+
+    std::fs::create_dir_all(&config_dir)?;
+    std::fs::write(
+        config_path,
+        initial_config_template(&connection, options.backend),
+    )?;
+    println!(
+        "created .datagate/datagate.toml for connection `{}`",
+        connection.name
+    );
+    Ok(())
+}
+
+fn run_doctor() -> anyhow::Result<()> {
+    let config_path = resolve_config_path_from_env();
+    println!("config_path={}", config_path.display());
+    let config = match Config::load(&config_path) {
+        Ok(config) => config,
+        Err(err) => {
+            println!("config_status=error");
+            println!("config_error={err}");
+            println!("effective_policy=deny_all");
+            return Ok(());
+        }
+    };
+    let connection = config.effective_connection()?;
+    let backend = resolve_backend_selector(&connection)?;
+    let policy = config.effective_policy()?;
+
+    println!("config_status=ok");
+    println!("profile={}", config.profile.as_deref().unwrap_or("default"));
+    println!("connection_name={}", connection.name);
+    println!("backend={}", backend.as_str());
+    for env_name in required_env_names_for_backend(backend, &connection) {
+        println!(
+            "env.{env_name}={}",
+            if std::env::var_os(env_name).is_some() {
+                "set"
+            } else {
+                "missing"
+            }
+        );
+    }
+    println!("policy_tables={}", policy.tables.len());
+    Ok(())
+}
+
+fn resolve_backend_selector(connection: &ConnectionConfig) -> anyhow::Result<BackendSelector> {
+    if std::env::var_os("DATAGATE_BACKEND").is_some() {
+        return Ok(BackendSelector::from_env()?);
+    }
+    Ok(connection
+        .backend_selector()?
+        .unwrap_or(BackendSelector::Auto))
+}
+
+fn required_env_names_for_backend(
+    backend: BackendSelector,
+    connection: &ConnectionConfig,
+) -> Vec<&str> {
+    match backend {
+        BackendSelector::Postgres => {
+            let env_names = connection.postgres_env_names();
+            if std::env::var_os(env_names.url).is_some() {
+                vec![env_names.url]
+            } else {
+                vec![env_names.host, env_names.user, env_names.database]
+            }
+        }
+        BackendSelector::MySql => {
+            let env_names = connection.mysql_env_names();
+            if std::env::var_os(env_names.url).is_some() {
+                vec![env_names.url]
+            } else {
+                vec![env_names.host, env_names.user, env_names.database]
+            }
+        }
+        BackendSelector::Sqlite => {
+            let env_names = connection.sqlite_env_names();
+            vec![env_names.url, env_names.path]
+        }
+        BackendSelector::Auto => Vec::new(),
+    }
+}
+
+fn initial_config_template(connection: &ConnectionConfig, backend: BackendSelector) -> String {
+    let backend = backend.as_str();
+    let env_line = if backend == "sqlite" {
+        "path_env = \"SQLITE_PATH\"".to_string()
+    } else {
+        format!("url_env = \"{}\"", default_url_env_for_backend(backend))
+    };
+    format!(
+        r#"profile = "dev"
+
+[profiles.dev.connection]
+name = "{}"
+backend = "{}"
+{}
+
+[profiles.dev.policy]
+default_row_limit = 100
+max_row_limit = 1000
+max_query_complexity = 100
+max_output_bytes = 131072
+
+# Add allowed tables and columns explicitly. Everything else is denied.
+#[profiles.dev.policy.tables.example]
+#columns = ["id"]
+"#,
+        connection.name, backend, env_line,
+    )
+}
+
+fn default_url_env_for_backend(backend: &str) -> &'static str {
+    match backend {
+        "mysql" => "MYSQL_URL",
+        "sqlite" => "SQLITE_URL",
+        _ => "DB_URL",
     }
 }
 
@@ -196,40 +440,15 @@ fn build_rate_limiter(
     RateLimiter::new(max_requests, std::time::Duration::from_secs(window_secs))
 }
 
-async fn initialize_backend(selector: BackendSelector) -> anyhow::Result<()> {
-    match selector {
-        BackendSelector::Auto => {
-            if let Some(postgres_config) = config::PostgresConfig::from_env()? {
-                initialize_postgres(postgres_config).await?;
-            } else if let Some(mysql_config) = config::MySqlConfig::from_env()? {
-                initialize_mysql(mysql_config).await?;
-            } else if let Some(sqlite_config) = config::SqliteConfig::from_env()? {
-                initialize_sqlite(sqlite_config).await?;
-            }
-        }
-        BackendSelector::Postgres => {
-            let postgres_config = config::PostgresConfig::from_env()?.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "DATAGATE_BACKEND=postgres but no PostgreSQL environment configuration was found"
-                )
-            })?;
-            initialize_postgres(postgres_config).await?;
-        }
-        BackendSelector::MySql => {
-            let mysql_config = config::MySqlConfig::from_env()?.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "DATAGATE_BACKEND=mysql but no MySQL/MariaDB environment configuration was found"
-                )
-            })?;
-            initialize_mysql(mysql_config).await?;
-        }
-        BackendSelector::Sqlite => {
-            let sqlite_config = config::SqliteConfig::from_env()?.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "DATAGATE_BACKEND=sqlite but no SQLite environment configuration was found"
-                )
-            })?;
-            initialize_sqlite(sqlite_config).await?;
+async fn initialize_backend(
+    selector: BackendSelector,
+    connection: &ConnectionConfig,
+) -> anyhow::Result<()> {
+    if let Some(config) = resolve_backend_config(selector, connection)? {
+        match config {
+            BackendConfig::Postgres(config) => initialize_postgres(config).await?,
+            BackendConfig::MySql(config) => initialize_mysql(config).await?,
+            BackendConfig::Sqlite(config) => initialize_sqlite(config).await?,
         }
     }
 
@@ -238,43 +457,59 @@ async fn initialize_backend(selector: BackendSelector) -> anyhow::Result<()> {
 
 async fn initialize_mcp_backend(
     selector: BackendSelector,
+    connection: &ConnectionConfig,
 ) -> anyhow::Result<Arc<dyn ReadOnlyBackend + Send + Sync>> {
+    match resolve_backend_config(selector, connection)?.ok_or_else(|| {
+        anyhow::anyhow!("DATAGATE_MCP_STDIO=1 requires database environment configuration")
+    })? {
+        BackendConfig::Postgres(config) => Ok(Arc::new(PostgresBackend::connect(&config).await?)),
+        BackendConfig::MySql(config) => Ok(Arc::new(MySqlBackend::connect(&config).await?)),
+        BackendConfig::Sqlite(config) => Ok(Arc::new(SqliteBackend::connect(&config).await?)),
+    }
+}
+
+fn resolve_backend_config(
+    selector: BackendSelector,
+    connection: &ConnectionConfig,
+) -> anyhow::Result<Option<BackendConfig>> {
     match selector {
         BackendSelector::Auto => {
-            if let Some(postgres_config) = config::PostgresConfig::from_env()? {
-                Ok(Arc::new(PostgresBackend::connect(&postgres_config).await?))
-            } else if let Some(mysql_config) = config::MySqlConfig::from_env()? {
-                Ok(Arc::new(MySqlBackend::connect(&mysql_config).await?))
-            } else if let Some(sqlite_config) = config::SqliteConfig::from_env()? {
-                Ok(Arc::new(SqliteBackend::connect(&sqlite_config).await?))
+            if let Some(config) = config::PostgresConfig::from_connection_env(connection)? {
+                Ok(Some(BackendConfig::Postgres(config)))
+            } else if let Some(config) = config::MySqlConfig::from_connection_env(connection)? {
+                Ok(Some(BackendConfig::MySql(config)))
             } else {
-                anyhow::bail!("DATAGATE_MCP_STDIO=1 requires database environment configuration");
+                Ok(config::SqliteConfig::from_connection_env(connection)?
+                    .map(BackendConfig::Sqlite))
             }
         }
+        BackendSelector::Postgres => config::PostgresConfig::from_connection_env(connection)?
+            .map(BackendConfig::Postgres)
+            .ok_or_else(|| anyhow::anyhow!(missing_backend_config_message(selector)))
+            .map(Some),
+        BackendSelector::MySql => config::MySqlConfig::from_connection_env(connection)?
+            .map(BackendConfig::MySql)
+            .ok_or_else(|| anyhow::anyhow!(missing_backend_config_message(selector)))
+            .map(Some),
+        BackendSelector::Sqlite => config::SqliteConfig::from_connection_env(connection)?
+            .map(BackendConfig::Sqlite)
+            .ok_or_else(|| anyhow::anyhow!(missing_backend_config_message(selector)))
+            .map(Some),
+    }
+}
+
+fn missing_backend_config_message(selector: BackendSelector) -> &'static str {
+    match selector {
         BackendSelector::Postgres => {
-            let postgres_config = config::PostgresConfig::from_env()?.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "DATAGATE_BACKEND=postgres but no PostgreSQL environment configuration was found"
-                )
-            })?;
-            Ok(Arc::new(PostgresBackend::connect(&postgres_config).await?))
+            "DATAGATE_BACKEND=postgres but no PostgreSQL environment configuration was found"
         }
         BackendSelector::MySql => {
-            let mysql_config = config::MySqlConfig::from_env()?.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "DATAGATE_BACKEND=mysql but no MySQL/MariaDB environment configuration was found"
-                )
-            })?;
-            Ok(Arc::new(MySqlBackend::connect(&mysql_config).await?))
+            "DATAGATE_BACKEND=mysql but no MySQL/MariaDB environment configuration was found"
         }
         BackendSelector::Sqlite => {
-            let sqlite_config = config::SqliteConfig::from_env()?.ok_or_else(|| {
-                anyhow::anyhow!(
-                    "DATAGATE_BACKEND=sqlite but no SQLite environment configuration was found"
-                )
-            })?;
-            Ok(Arc::new(SqliteBackend::connect(&sqlite_config).await?))
+            "DATAGATE_BACKEND=sqlite but no SQLite environment configuration was found"
         }
+        BackendSelector::Auto => "no database environment configuration was found",
     }
 }
 
@@ -420,6 +655,49 @@ mod tests {
         assert_eq!(parse_log_format(None), LogFormat::Pretty);
         assert_eq!(parse_log_format(Some("")), LogFormat::Pretty);
         assert_eq!(parse_log_format(Some("unknown")), LogFormat::Pretty);
+    }
+
+    #[test]
+    fn parses_mcp_stdio_command() {
+        assert_eq!(
+            parse_cli_command(["mcp".to_string(), "stdio".to_string()]).unwrap(),
+            CliCommand::McpStdio
+        );
+    }
+
+    #[test]
+    fn parses_init_command_with_name_backend_and_force() {
+        assert_eq!(
+            parse_cli_command([
+                "init".to_string(),
+                "--name".to_string(),
+                "pippo".to_string(),
+                "--backend".to_string(),
+                "sqlite".to_string(),
+                "--force".to_string(),
+            ])
+            .unwrap(),
+            CliCommand::Init(InitOptions {
+                name: "pippo".to_string(),
+                backend: BackendSelector::Sqlite,
+                force: true,
+            })
+        );
+    }
+
+    #[test]
+    fn init_template_records_env_name_without_secret_value() {
+        let config = ConnectionConfig {
+            name: "pippo".to_string(),
+            backend: Some("postgres".to_string()),
+            ..ConnectionConfig::default()
+        };
+        let template = initial_config_template(&config, BackendSelector::Postgres);
+        assert!(template.contains("name = \"pippo\""));
+        assert!(template.contains("backend = \"postgres\""));
+        assert!(template.contains("url_env = \"DB_URL\""));
+        assert!(!template.contains("postgresql://"));
+        assert!(!template.contains("password"));
     }
 
     #[test]

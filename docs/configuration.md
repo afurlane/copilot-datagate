@@ -9,11 +9,20 @@ be explicitly listed in the policy before a tool can access them.
 1. Copy `datagate.example.toml` to `datagate.toml`.
 2. Adjust the selected profile and its table/column allow-list.
 3. Set database credentials through environment variables.
-4. Select a backend with `DATAGATE_BACKEND`, or leave it unset for `auto`.
-5. Run the service:
+4. Define one named connection for the selected profile, or use the default
+  connection conventions.
+5. Select a backend with the profile connection, `DATAGATE_BACKEND`, or leave
+  both unset for `auto`.
+6. Run the service:
 
 ```bash
 cargo run
+```
+
+For registry/editor usage, prefer the product CLI:
+
+```bash
+copilot-datagate mcp stdio
 ```
 
 The current binary initializes configuration, policy, observability, and the
@@ -25,6 +34,33 @@ enabled via environment variables.
 `DATAGATE_BACKEND` accepts `auto`, `postgres`, `mysql`/`mariadb`, or `sqlite`.
 The default `auto` order is PostgreSQL, MySQL/MariaDB, then SQLite. Explicit
 selection fails when the matching environment configuration is missing.
+
+When `DATAGATE_BACKEND` is unset, a profile connection can select the backend:
+
+```toml
+[profiles.dev.connection]
+name = "pippo"
+backend = "postgres"
+url_env = "PIPPO_DB_URL"
+options_env = "PIPPO_DB_OPTIONS"
+```
+
+DataGate 1.0 supports one active named connection per selected profile. The name
+is included now to keep the configuration compatible with future
+multi-connection workflows.
+
+Available connection fields are environment-variable names, not secret values:
+
+- `url_env`
+- `options_env`
+- `host_env`
+- `port_env`
+- `user_env`
+- `password_env`
+- `database_env`
+- `path_env`
+- `max_connections_env`
+- `acquire_timeout_secs_env`
 
 ### PostgreSQL
 
@@ -129,23 +165,21 @@ For VS Code, use `stdio` as the default transport model for local runs.
   "servers": {
     "copilot-datagate": {
       "type": "stdio",
-      "command": "cargo",
-      "args": ["run", "--quiet"],
+      "command": "copilot-datagate",
+      "args": ["mcp", "stdio"],
       "cwd": "${workspaceFolder}",
       "env": {
-        "DATAGATE_MCP_STDIO": "1",
-        "DATAGATE_CONFIG": "${workspaceFolder}/datagate.toml",
-        "DATAGATE_BACKEND": "postgres",
-        "DB_URL": "postgresql://reader:password@127.0.0.1:5432/application",
-        "DB_OPTIONS": "application_name=datagate&search_path=public",
-        "DB_MAX_CONNECTIONS": "10",
-        "DB_ACQUIRE_TIMEOUT_SECS": "10"
+        "DATAGATE_PROJECT_ROOT": "${workspaceFolder}"
       }
     }
   }
 }
 ```
 
+Run `copilot-datagate init --name pippo --backend postgres` in the workspace to
+create `.datagate/datagate.toml` without storing secrets. Run
+`copilot-datagate doctor` to inspect the selected config and required
+environment variables.
 ### Remote HTTP
 
 Remote HTTP transport is not part of the default 1.0 configuration. It requires

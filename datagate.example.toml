@@ -9,6 +9,10 @@ profile = "dev"
 # Named profiles are selected by the `profile` value above. The legacy flat
 # [policy] section remains supported when no [profiles] section is configured.
 
+# DataGate 1.0 uses one active named connection per selected profile. The name
+# is intentionally part of the config now so future multi-connection workflows
+# can refer to databases explicitly (for example: pippo, pluto).
+
 # PostgreSQL credentials are read only from the environment, never from this file.
 # Backend selection is also environment-driven via DATAGATE_BACKEND
 # (auto|postgres|mysql|mariadb|sqlite). Default is auto.
@@ -16,6 +20,14 @@ profile = "dev"
 # Component form: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME.
 # Pool settings: DB_MAX_CONNECTIONS and DB_ACQUIRE_TIMEOUT_SECS.
 # DB_URL takes precedence when both forms are present.
+
+[profiles.dev.connection]
+name = "dev-postgres"
+backend = "postgres"
+url_env = "DB_URL"
+options_env = "DB_OPTIONS"
+max_connections_env = "DB_MAX_CONNECTIONS"
+acquire_timeout_secs_env = "DB_ACQUIRE_TIMEOUT_SECS"
 
 [profiles.dev.policy]
 default_row_limit = 100

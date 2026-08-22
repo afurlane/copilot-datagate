@@ -57,8 +57,9 @@ For local usage and VS Code integration, `stdio` is the default transport model.
 
 Current implementation notes:
 
-- The MCP transport in the current bootstrap path is enabled only when
-    `DATAGATE_MCP_STDIO=1`.
+- The MCP transport in the current bootstrap path is enabled by
+    `copilot-datagate mcp stdio`; `DATAGATE_MCP_STDIO=1` remains supported for
+    compatibility with older local templates.
 - The stdio bootstrap uses `DATAGATE_BACKEND` and supports `auto`, `postgres`,
     `mysql`/`mariadb`, and `sqlite` through the shared read-only backend trait.
 - In MCP stdio mode, application logs are written to stderr and default to
@@ -68,11 +69,7 @@ Current implementation notes:
 Enable stdio transport:
 
 ```bash
-DATAGATE_MCP_STDIO=1 \
-DATAGATE_BACKEND=postgres \
-DB_URL=postgresql://reader:password@127.0.0.1:5432/application \
-DATAGATE_CONFIG=/path/to/datagate.toml \
-cargo run
+copilot-datagate mcp stdio
 ```
 
 The transport uses the `rmcp` SDK and exposes `initialize`, `tools/list`, and
@@ -92,17 +89,11 @@ Use one of the following templates depending on the deployment model.
     "servers": {
         "copilot-datagate": {
             "type": "stdio",
-            "command": "cargo",
-            "args": ["run", "--quiet"],
+            "command": "copilot-datagate",
+            "args": ["mcp", "stdio"],
             "cwd": "${workspaceFolder}",
             "env": {
-                "DATAGATE_MCP_STDIO": "1",
-                "DATAGATE_CONFIG": "${workspaceFolder}/datagate.toml",
-                "DATAGATE_BACKEND": "postgres",
-                "DB_URL": "postgresql://reader:password@127.0.0.1:5432/application",
-                "DB_OPTIONS": "application_name=datagate&search_path=public",
-                "DB_MAX_CONNECTIONS": "10",
-                "DB_ACQUIRE_TIMEOUT_SECS": "10"
+                "DATAGATE_PROJECT_ROOT": "${workspaceFolder}"
             }
         }
     }
