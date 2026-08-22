@@ -56,13 +56,13 @@
 - [x] CLI auto-configurante (`init`, `doctor`, `mcp stdio`) senza segreti nei file di progetto
 - [x] Preparazione metadata e template stdio locale per MCP Registry / VS Code MCP Server Gallery
 - [x] Valutazione requisiti MCP Registry, VS Code, Visual Studio e Rider / IntelliJ per server MCP locali installabili
-- [ ] Packaging GitHub Release come sorgente canonica per installer e registry metadata
-- [ ] Packaging Homebrew per macOS/Linux
-- [ ] Packaging Scoop per Windows
-- [ ] Packaging npm wrapper opzionale per client MCP che usano `npx`
-- [ ] Valutazione WinGet
-- [ ] Valutazione crates.io / `cargo install`
-- [ ] Valutazione OCI/Docker per scenari non-IDE
+- [x] Packaging GitHub Release come sorgente canonica per installer e registry metadata
+- [x] Template Homebrew per macOS/Linux
+- [x] Template Scoop per Windows
+- [x] Wrapper npm opzionale per client MCP che usano `npx`
+- [x] Valutazione WinGet
+- [x] Valutazione crates.io / `cargo install`
+- [x] Valutazione OCI/Docker per scenari non-IDE
 - [ ] Pubblicazione MCP Registry, se compatibile con transport stdio locale e installazione cross-editor
 - [ ] Pubblicazione ufficiale
 
