@@ -1,11 +1,11 @@
-# @afurlane/copilot-datagate
+# @copilot-datagate/cli
 
 Thin npm wrapper for DataGate. The canonical binaries are published in GitHub
 Releases; this package exists for MCP clients and editors that prefer an `npx`
 install path.
 
 ```bash
-npx -y @afurlane/copilot-datagate mcp stdio
+npx -y @copilot-datagate/cli mcp stdio
 ```
 
 The wrapper downloads the matching GitHub Release binary for the host platform

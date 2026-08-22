@@ -192,7 +192,8 @@ Documentazione completa:
 
 Per l'avvio da VS Code con MCP:
 - il transport locale di default è `stdio`
-- i template `mcp.json` (locale supportato oggi + HTTP remoto pianificato) sono in [docs/mcp-tools.md](docs/mcp-tools.md) e [docs/configuration.md](docs/configuration.md)
+- i template `mcp.json` per stdio locale sono in [docs/mcp-tools.md](docs/mcp-tools.md) e [docs/configuration.md](docs/configuration.md)
+- HTTP remoto è fuori dal default 1.0 e richiede una decisione di sicurezza dedicata
 
 ## 📍 Roadmap (sintesi)
 

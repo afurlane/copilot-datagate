@@ -1,0 +1,29 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.afurlane/copilot-datagate",
+  "description": "Policy-driven, read-only MCP server for safe database access from AI tools.",
+  "repository": {
+    "url": "https://github.com/afurlane/copilot-datagate",
+    "source": "github"
+  },
+  "version": "0.4.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@copilot-datagate/cli",
+      "version": "0.4.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "DATAGATE_PROJECT_ROOT",
+          "description": "Workspace root used to resolve .datagate/datagate.toml, datagate.toml, or user-level config.",
+          "isRequired": false,
+          "format": "string",
+          "isSecret": false
+        }
+      ]
+    }
+  ]
+}
