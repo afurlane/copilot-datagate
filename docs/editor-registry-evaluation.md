@@ -15,10 +15,11 @@ clients. For the 1.0 line, the clean registry path is:
 4. Keep secrets in environment variables or native database mechanisms, never in
    registry/editor metadata.
 
-Direct registry publication from GitHub Release binaries alone is not the best
-first target. The MCP Registry is metadata-only and expects package ownership
-verification for supported package types. A small package wrapper around the
-release binaries is the most portable path.
+Direct registry publication from GitHub Release binaries alone might not be
+sufficient because the MCP Registry is metadata-only and expects package
+ownership verification for supported package types. DataGate should keep GitHub
+Releases as the canonical binary source and support multiple package-manager
+descriptors around those artifacts.
 
 ## MCP Registry
 
@@ -155,10 +156,11 @@ DataGate impact:
 Use a staged publishing plan:
 
 1. Keep GitHub Releases as canonical signed/checksummed binary artifacts.
-2. Add an npm wrapper package that downloads or dispatches to the correct release
-   binary and exposes `copilot-datagate`.
+2. Add package-manager descriptors in priority order: Homebrew, Scoop, optional
+   npm wrapper for `npx`-oriented MCP clients, then WinGet / crates.io / OCI as
+   follow-up channels.
 3. Add `mcpName = "io.github.afurlane/copilot-datagate"` or the package-type
-   equivalent required by the final package channel.
+   equivalent required by each published package channel.
 4. Generate a registry-valid `server.json` from
    [mcp-registry-metadata.json](mcp-registry-metadata.json) once package type and
    version are fixed.
@@ -168,7 +170,8 @@ Use a staged publishing plan:
 
 ## Open Decisions Before Publication
 
-- Choose the first package channel. Recommendation: npm wrapper.
+- Choose the first package channel. Recommendation: Homebrew + Scoop first,
+  with npm wrapper added if registry/client UX requires `npx`.
 - Decide whether to commit generated `server.json` or derive it from
   `docs/mcp-registry-metadata.json` during release.
 - Decide whether to add Homebrew/Scoop/WinGet before or after registry

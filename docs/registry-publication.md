@@ -31,13 +31,21 @@ than embedding platform-specific paths. The preferred command shape is:
 copilot-datagate mcp stdio
 ```
 
-A package-wrapper can later provide this command by downloading the matching
-GitHub Release binary for the host platform. Candidate package channels:
+A package wrapper or package-manager manifest can later provide this command by
+downloading or dispatching to the matching GitHub Release binary for the host
+platform. Candidate package channels:
 
-- npm wrapper for clients that support `npx` command templates
+- GitHub Release binary as the canonical artifact source
 - Homebrew tap for macOS/Linux
-- Scoop or WinGet for Windows
-- direct GitHub Release binary download
+- Scoop for Windows
+- npm wrapper for clients that support `npx` command templates
+- WinGet for Windows once the simpler Windows path is proven
+- crates.io / `cargo install` for Rust users, if publishing the crate becomes desirable
+- OCI/Docker for non-IDE automation scenarios, not as the default local IDE path
+
+The intended shape is one canonical build artifact set with multiple installer
+descriptors around it. npm is useful for MCP clients that prefer `npx`, but it is
+not a requirement of DataGate itself.
 
 ## Registry Template
 
