@@ -180,6 +180,7 @@ Documentazione completa:
 - [docs/configuration.md](docs/configuration.md) — quick start, backend, policy e operazioni
 - [docs/benchmarks.md](docs/benchmarks.md) — benchmark locali SQLite e PostgreSQL reale
 - [docs/hardening.md](docs/hardening.md) — checklist hardening finale per il confine MCP/database
+- [docs/registry-publication.md](docs/registry-publication.md) — strategia MCP Registry, installazione cross-editor e connessioni nominate
 - [docs/release-candidate.md](docs/release-candidate.md) — criteri e gate della 1.0 candidate
 - [docs/mcp-tools.md](docs/mcp-tools.md) — contratti interni e regole dei tool MCP
 - [CONTRIBUTING.md](CONTRIBUTING.md) — regole di contribuzione, commit e branch

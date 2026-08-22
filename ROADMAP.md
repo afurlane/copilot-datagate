@@ -50,9 +50,13 @@
 - [x] Test end-to-end MCP (client rmcp + SQLite)
 - [x] Benchmark
 - [x] Hardening finale
-- [ ] Transport MCP HTTP per scenari remoti
-- [ ] Selezione transport dual-mode (stdio + HTTP) con configurazione runtime
-- [ ] Pubblicazione MCP Registry e valutazione VS Code MCP Server Gallery
+- [ ] Decision record: valutare se supportare un transport MCP HTTP remoto
+- [ ] Resolver configurazione project-aware (`DATAGATE_CONFIG` -> `.datagate/datagate.toml` -> `datagate.toml` -> config utente)
+- [ ] Connessione nominata singola per workspace (es. `name = "pippo"`) come base compatibile con futuro multi-connessione
+- [ ] CLI auto-configurante (`init`, `doctor`, `mcp stdio`) senza segreti nei file di progetto
+- [ ] Preparazione metadata e template stdio locale per MCP Registry / VS Code MCP Server Gallery
+- [ ] Valutazione requisiti MCP Registry, VS Code, Visual Studio e Rider per server MCP locali installabili
+- [ ] Pubblicazione MCP Registry, se compatibile con transport stdio locale e installazione cross-editor
 - [ ] Pubblicazione ufficiale
 
 > Ogni feature nuova deve essere accompagnata da test (unit e, dove applicabile,

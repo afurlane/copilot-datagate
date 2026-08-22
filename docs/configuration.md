@@ -129,26 +129,12 @@ For VS Code, use `stdio` as the default transport model for local runs.
 }
 ```
 
-### Template B: Remote HTTP (planned)
+### Remote HTTP
 
-This template is for the future HTTP transport milestone.
-
-```json
-{
-  "servers": {
-    "copilot-datagate-remote": {
-      "type": "http",
-      "url": "https://datagate.example.com/mcp",
-      "headers": {
-        "Authorization": "Bearer ${input:datagateToken}"
-      }
-    }
-  }
-}
-```
-
-When HTTP support is implemented, local stdio and remote HTTP can be used
-together.
+Remote HTTP transport is not part of the default 1.0 configuration. It requires
+a separate security decision because it changes DataGate from a local stdio
+process into a network-facing service. Registry publication targets local stdio
+only; see [registry-publication.md](registry-publication.md).
 
 ## Verification
 

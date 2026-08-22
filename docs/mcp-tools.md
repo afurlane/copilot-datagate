@@ -109,26 +109,12 @@ Use one of the following templates depending on the deployment model.
 }
 ```
 
-### Template B: Remote HTTP (planned)
+### Remote HTTP
 
-This template becomes valid when HTTP transport is implemented.
-
-```json
-{
-    "servers": {
-        "copilot-datagate-remote": {
-            "type": "http",
-            "url": "https://datagate.example.com/mcp",
-            "headers": {
-                "Authorization": "Bearer ${input:datagateToken}"
-            }
-        }
-    }
-}
-```
-
-When HTTP transport lands, both templates can coexist so local and remote
-servers can be used in parallel.
+Remote HTTP transport is intentionally not part of the default registry path.
+It requires a separate security decision because it introduces a network-facing
+surface, authentication, authorization, and abuse controls. Registry publication
+targets local stdio; see [registry-publication.md](registry-publication.md).
 
 The transport test suite also runs a real `rmcp` client against the server over
 an in-memory duplex stream. It verifies tool discovery, a `select` call, and a
