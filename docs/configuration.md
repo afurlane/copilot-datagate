@@ -52,10 +52,27 @@ Use `SQLITE_URL` or `SQLITE_PATH`. SQLite connections are opened read-only and
 are never created automatically. Pool settings are `SQLITE_MAX_CONNECTIONS`
 and `SQLITE_ACQUIRE_TIMEOUT_SECS`.
 
+## Configuration Resolution
+
+DataGate resolves the policy configuration path in this order:
+
+1. `DATAGATE_CONFIG`
+2. `${DATAGATE_PROJECT_ROOT}/.datagate/datagate.toml`
+3. `${DATAGATE_PROJECT_ROOT}/datagate.toml`
+4. user-level config at `~/.config/datagate/config.toml`
+5. legacy relative fallback `datagate.toml`
+
+`DATAGATE_CONFIG` is an explicit override and is used even when the file is
+missing, so startup can report the exact operator-provided path. Project-local
+paths are used only when present. If no project config exists, the user-level
+path is selected and normal deny-all fallback applies if it cannot be loaded.
+
+`DATAGATE_PROJECT_ROOT` lets registry and editor integrations pass the active
+workspace folder without embedding database details in `mcp.json`.
+
 ## Policy File
 
-`DATAGATE_CONFIG` selects the TOML path; the default is `datagate.toml`.
-Credentials must not be placed in this file.
+Credentials must not be placed in policy configuration files.
 
 A named profile is selected with `profile`:
 
