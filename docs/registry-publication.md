@@ -54,6 +54,7 @@ A registry template should be stable and avoid database-specific parameters:
 Candidate metadata is tracked in [mcp-registry-metadata.json](mcp-registry-metadata.json).
 The cross-editor compatibility assessment is tracked in
 [editor-registry-evaluation.md](editor-registry-evaluation.md).
+Packaging channel details are tracked in [packaging.md](packaging.md).
 
 ```json
 {

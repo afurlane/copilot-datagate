@@ -1,0 +1,25 @@
+{
+  "name": "@afurlane/copilot-datagate",
+  "version": "0.3.0",
+  "description": "Policy-driven, read-only MCP server for safe database access from AI tools.",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/afurlane/copilot-datagate.git"
+  },
+  "homepage": "https://github.com/afurlane/copilot-datagate",
+  "mcpName": "io.github.afurlane/copilot-datagate",
+  "bin": {
+    "copilot-datagate": "bin/copilot-datagate.js"
+  },
+  "files": [
+    "bin/",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node test/platform.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

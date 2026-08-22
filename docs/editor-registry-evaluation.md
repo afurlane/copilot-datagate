@@ -191,6 +191,9 @@ registry readiness and remains intentionally out of scope for 1.0.
 
 ## Sources Checked
 
+Packaging channel details and follow-up requirements are maintained in
+[packaging.md](packaging.md).
+
 - MCP Registry quickstart and publisher flow:
   `https://github.com/modelcontextprotocol/registry/blob/main/docs/modelcontextprotocol-io/quickstart.mdx`
 - MCP Registry repository and development status:

@@ -29,6 +29,11 @@
     "denyByDefault": true,
     "httpTransport": "not_enabled_for_1_0"
   },
+  "installChannels": {
+    "canonical": "github-release",
+    "templateReady": ["homebrew", "scoop", "npm-wrapper"],
+    "evaluated": ["winget", "crates.io", "oci"]
+  },
   "platforms": [
     "linux-x86_64",
     "linux-aarch64",
