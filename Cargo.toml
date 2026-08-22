@@ -1,6 +1,6 @@
 [package]
 name = "copilot-datagate"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Secure AI-Ready Data Gateway — policy-driven, read-only MCP server for exposing databases to LLMs"
