@@ -51,7 +51,8 @@ not a requirement of DataGate itself.
 
 A registry template should be stable and avoid database-specific parameters:
 
-Candidate metadata is tracked in [mcp-registry-metadata.json](mcp-registry-metadata.json).
+Candidate metadata is tracked in [mcp-registry-metadata.json](mcp-registry-metadata.json)
+and the MCP Registry manifest candidate is tracked in [server.json](../server.json).
 The cross-editor compatibility assessment is tracked in
 [editor-registry-evaluation.md](editor-registry-evaluation.md).
 Packaging channel details are tracked in [packaging.md](packaging.md).
@@ -162,6 +163,13 @@ copilot-datagate mcp stdio
 - check whether required environment variables exist without printing values
 - check read-only backend connectivity
 - check that at least one policy table is allow-listed
+
+For 0.4.0, `server.json` targets the optional npm wrapper package
+`@copilot-datagate/cli@0.4.0`, which has been published to npm. Future npm
+publishes should use the manual `Publish npm wrapper` GitHub Actions workflow
+with npm Trusted Publishing (OIDC), not a long-lived npm token. MCP Registry
+publication still requires an authenticated `mcp-publisher login github` session
+or an approved GitHub Actions publishing flow.
 
 ## Secret Handling
 

@@ -29,12 +29,17 @@ with target-specific SHA-256 checksum files.
 | crates.io | Evaluated | Rust-user install path, not default UX |
 | OCI/Docker | Evaluated | Automation/isolation scenarios, not default IDE UX |
 
+The 0.4.0 Homebrew and Scoop templates include the real GitHub Release asset
+URLs and SHA-256 values. The npm wrapper package is versioned at 0.4.0 and can
+be dry-run packed locally, but actual npm publication requires an authenticated
+npm account.
+
 ## Versioning
 
 Release asset tags follow release-please tags such as:
 
 ```text
-copilot-datagate-v0.3.0
+copilot-datagate-v0.4.0
 ```
 
 Archive names follow the release workflow shape:
@@ -47,7 +52,7 @@ copilot-datagate-<tag>-<platform>.zip
 Example:
 
 ```text
-copilot-datagate-copilot-datagate-v0.3.0-linux-x86_64.tar.gz
+copilot-datagate-copilot-datagate-v0.4.0-linux-x86_64.tar.gz
 ```
 
 ## Publication Order

@@ -1,16 +1,16 @@
 {
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Policy-driven, read-only MCP server for safe database access from AI tools.",
   "homepage": "https://github.com/afurlane/copilot-datagate",
   "license": "Apache-2.0",
   "architecture": {
     "64bit": {
-      "url": "https://github.com/afurlane/copilot-datagate/releases/download/copilot-datagate-v0.3.0/copilot-datagate-copilot-datagate-v0.3.0-windows-x86_64.zip",
-      "hash": "TODO_REPLACE_WITH_WINDOWS_X86_64_SHA256"
+      "url": "https://github.com/afurlane/copilot-datagate/releases/download/copilot-datagate-v0.4.0/copilot-datagate-copilot-datagate-v0.4.0-windows-x86_64.zip",
+      "hash": "6dcb93acde33c0a1d8d26e9abac079fa28916ce4c45cae523edb716abdbfb24b"
     },
     "arm64": {
-      "url": "https://github.com/afurlane/copilot-datagate/releases/download/copilot-datagate-v0.3.0/copilot-datagate-copilot-datagate-v0.3.0-windows-aarch64.zip",
-      "hash": "TODO_REPLACE_WITH_WINDOWS_AARCH64_SHA256"
+      "url": "https://github.com/afurlane/copilot-datagate/releases/download/copilot-datagate-v0.4.0/copilot-datagate-copilot-datagate-v0.4.0-windows-aarch64.zip",
+      "hash": "dc08081a0e781541540afe851c7ceb2417f66584a42bd0e97a93274c679ef601"
     }
   },
   "bin": "copilot-datagate.exe",

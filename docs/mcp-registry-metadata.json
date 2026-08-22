@@ -1,6 +1,8 @@
 {
   "name": "copilot-datagate",
+  "mcpName": "io.github.afurlane/copilot-datagate",
   "displayName": "DataGate",
+  "version": "0.4.0",
   "description": "Policy-driven, read-only MCP server for safe database access from AI tools.",
   "repository": "https://github.com/afurlane/copilot-datagate",
   "license": "Apache-2.0",

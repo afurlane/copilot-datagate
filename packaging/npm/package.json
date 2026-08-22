@@ -1,6 +1,6 @@
 {
-  "name": "@afurlane/copilot-datagate",
-  "version": "0.3.0",
+  "name": "@copilot-datagate/cli",
+  "version": "0.4.0",
   "description": "Policy-driven, read-only MCP server for safe database access from AI tools.",
   "license": "Apache-2.0",
   "repository": {
