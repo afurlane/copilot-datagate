@@ -183,6 +183,7 @@ Documentazione completa:
 - [docs/http-transport-decision.md](docs/http-transport-decision.md) — decisione sicurezza sul transport MCP HTTP remoto
 - [docs/editor-registry-evaluation.md](docs/editor-registry-evaluation.md) — valutazione requisiti MCP Registry e client cross-editor
 - [docs/packaging.md](docs/packaging.md) — canali packaging e sorgente canonica degli artifact
+- [docs/postgres-mcp-comparison.md](docs/postgres-mcp-comparison.md) — confronto con altri server MCP PostgreSQL
 - [docs/registry-publication.md](docs/registry-publication.md) — strategia MCP Registry, installazione cross-editor e connessioni nominate
 - [docs/mcp-registry-metadata.json](docs/mcp-registry-metadata.json) — metadata candidate per registry/gallerie MCP
 - [docs/release-candidate.md](docs/release-candidate.md) — criteri e gate della 1.0 candidate
